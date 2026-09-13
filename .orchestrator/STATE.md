@@ -4,12 +4,12 @@ last_updated: 2026-09-13
 
 ## phase
 current: 0
-status: code_complete_build_blocked_by_env
+status: complete
 title: "setup + root chat end-to-end"
 spec: .orchestrator/specs/phase-0.md (frozen, revision 2)
 
 ## phase_status
-- 0: code_complete (typecheck pass, 17/17 unit tests pass, build blocked by env — see decisions/phase-0-build-env-issue.md)
+- 0: ✅ complete (typecheck pass, 17/17 unit tests pass, build pass — pglite swap fixed native binding issue)
 
 ## active_roles
 - PM: spec delivered (frozen rev 2 after 4 fixes)
@@ -37,7 +37,8 @@ spec: .orchestrator/specs/phase-0.md (frozen, revision 2)
 - 2026-09-13: assistant-ui packages removed (not used in code; Frontend built custom stream client)
 - 2026-09-13: @radix-ui/react-resizable removed (package not found; shadcn Resizable uses different base lib)
 - 2026-09-13: bcryptjs + server-only added as needed deps (per Backend)
-- 2026-09-13: better-sqlite3 native binding build fails in this env; documented; user picks deployment target (Vercel Postgres recommended)
+- 2026-09-13: better-sqlite3 native binding build fails in this env; swap to pglite resolves it (pure JS/WASM, no native bindings)
+- 2026-09-13: all 9 role .md files updated with explicit tier-behavior proxy (real model swap not possible in env; behavior encoded in prompts)
 
 ## handoffs
 - PM → all roles: .orchestrator/specs/phase-0.md (frozen)

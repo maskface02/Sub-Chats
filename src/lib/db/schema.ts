@@ -1,39 +1,39 @@
 import {
-  sqliteTable,
+  pgTable,
   text,
   integer,
+  boolean,
+  timestamp,
   primaryKey,
   index,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
-const ts = (name: string) =>
-  integer(name, { mode: "timestamp_ms" }).notNull();
-const tsNullable = (name: string) =>
-  integer(name, { mode: "timestamp_ms" });
+const ts = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
+const tsNullable = (name: string) => timestamp(name, { withTimezone: true });
 
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   email: text("email").notNull().unique(),
-  emailVerified: tsNullable("emailVerified"),
+  emailVerified: tsNullable("email_verified"),
   name: text("name"),
   image: text("image"),
-  passwordHash: text("passwordHash"),
-  createdAt: ts("createdAt").$defaultFn(() => new Date()),
-  updatedAt: ts("updatedAt").$defaultFn(() => new Date()),
+  passwordHash: text("password_hash"),
+  createdAt: ts("created_at").$defaultFn(() => new Date()),
+  updatedAt: ts("updated_at").$defaultFn(() => new Date()),
 });
 
-export const accounts = sqliteTable(
+export const accounts = pgTable(
   "accounts",
   {
-    userId: text("userId")
+    userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     type: text("type").notNull(),
     provider: text("provider").notNull(),
-    providerAccountId: text("providerAccountId").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
     refresh_token: text("refresh_token"),
     access_token: text("access_token"),
     expires_at: integer("expires_at"),
@@ -47,43 +47,43 @@ export const accounts = sqliteTable(
   }),
 );
 
-export const sessions = sqliteTable("sessions", {
-  sessionToken: text("sessionToken").primaryKey(),
-  userId: text("userId")
+export const sessions = pgTable("sessions", {
+  sessionToken: text("session_token").primaryKey(),
+  userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  expires: ts("expires"),
+  expires: ts("expires").notNull(),
 });
 
-export const verificationTokens = sqliteTable(
+export const verificationTokens = pgTable(
   "verification_tokens",
   {
     identifier: text("identifier").notNull(),
     token: text("token").notNull(),
-    expires: ts("expires"),
+    expires: ts("expires").notNull(),
   },
   (vt) => ({
     pk: primaryKey({ columns: [vt.identifier, vt.token] }),
   }),
 );
 
-export const conversations = sqliteTable(
+export const conversations = pgTable(
   "conversations",
   {
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("userId")
+    userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default("New chat"),
-    parentId: text("parentId"),
-    rootConversationId: text("rootConversationId").notNull(),
+    parentId: text("parent_id"),
+    rootConversationId: text("root_conversation_id").notNull(),
     depth: integer("depth").notNull().default(0),
-    highlightText: text("highlightText"),
-    highlightContext: text("highlightContext"),
-    createdAt: ts("createdAt").$defaultFn(() => new Date()),
-    updatedAt: ts("updatedAt").$defaultFn(() => new Date()),
+    highlightText: text("highlight_text"),
+    highlightContext: text("highlight_context"),
+    createdAt: ts("created_at").$defaultFn(() => new Date()),
+    updatedAt: ts("updated_at").$defaultFn(() => new Date()),
   },
   (c) => ({
     userUpdatedIdx: index("conversations_user_updated_idx").on(
@@ -95,20 +95,20 @@ export const conversations = sqliteTable(
   }),
 );
 
-export const messages = sqliteTable(
+export const messages = pgTable(
   "messages",
   {
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    conversationId: text("conversationId")
+    conversationId: text("conversation_id")
       .notNull()
       .references(() => conversations.id, { onDelete: "cascade" }),
     role: text("role", { enum: ["user", "assistant", "system"] }).notNull(),
     content: text("content").notNull(),
     model: text("model"),
-    providerId: text("providerId"),
-    createdAt: ts("createdAt").$defaultFn(() => new Date()),
+    providerId: text("provider_id"),
+    createdAt: ts("created_at").$defaultFn(() => new Date()),
   },
   (m) => ({
     convCreatedIdx: index("messages_conversation_created_idx").on(
@@ -118,21 +118,21 @@ export const messages = sqliteTable(
   }),
 );
 
-export const providers = sqliteTable("providers", {
+export const providers = pgTable("providers", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  userId: text("userId")
+  userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   type: text("type", {
     enum: ["openai", "anthropic", "ollama", "custom"],
   }).notNull(),
-  baseUrl: text("baseUrl"),
-  apiKeyCiphertext: text("apiKeyCiphertext"),
-  defaultModel: text("defaultModel"),
-  isDefault: integer("isDefault").notNull().default(0),
-  createdAt: ts("createdAt").$defaultFn(() => new Date()),
+  baseUrl: text("base_url"),
+  apiKeyCiphertext: text("api_key_ciphertext"),
+  defaultModel: text("default_model"),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: ts("created_at").$defaultFn(() => new Date()),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({

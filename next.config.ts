@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: "2mb" },
   },
   // assistant-ui and AI SDK are server-side; keep client bundle lean
-  serverExternalPackages: ["better-sqlite3", "pino"],
+  serverExternalPackages: ["@electric-sql/pglite", "pino"],
 };
 
 export default nextConfig;
