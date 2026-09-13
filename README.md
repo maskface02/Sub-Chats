@@ -2,9 +2,9 @@
 
 > AI chat with branching conversation trees — a foundation for threaded, exploratory conversations with any model.
 
-![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-0-blue) ![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-1-blue) ![license](https://img.shields.io/badge/license-MIT-green)
 
-> Phase 0 ships the foundation: signup, signin, and a real, persistent, streamed AI conversation. Branching lands in phase 1.
+> Phase 1 ships the unique feature: **branching sub-chats**. It builds on the phase 0 foundation (signup, signin, streaming root chat, persistent history).
 
 ## Features
 
@@ -17,7 +17,18 @@ Phase 0 includes:
 - **Conversation list** — your recent chats on the home page, ordered by recency.
 - **Secure by default** — cross-user access returns 404 (not 403) to prevent ID enumeration. Sign-in rate limited to 5 attempts per 15 minutes per IP.
 
-What is **not** in phase 0: branching, tree visualisation, split view, multi-provider picker, attachments, search, custom system prompts. See the [roadmap](#roadmap).
+What is **not** yet shipped: tree visualisation, split view, multi-provider picker, attachments, search, custom system prompts. See the [roadmap](#roadmap).
+
+## Sub-chats (the unique feature)
+
+Sub-chats let you branch any AI conversation by highlighting text:
+
+1. Highlight any text in an assistant message
+2. Click the floating "Ask about this" pill (or right-click → "Sub-chat about selection")
+3. A new chat opens, focused on your highlight, with full parent context loaded
+4. Ask your follow-up — the AI knows what you're asking about
+
+Sub-chats can themselves spawn sub-chats. Navigate via the breadcrumb at the top.
 
 ## Screenshots
 

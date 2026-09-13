@@ -6,6 +6,7 @@ import {
   timestamp,
   primaryKey,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -77,8 +78,13 @@ export const conversations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default("New chat"),
-    parentId: text("parent_id"),
-    rootConversationId: text("root_conversation_id").notNull(),
+    parentId: text("parent_id").references(
+      (): AnyPgColumn => conversations.id,
+      { onDelete: "cascade" },
+    ),
+    rootConversationId: text("root_conversation_id")
+      .notNull()
+      .references((): AnyPgColumn => conversations.id, { onDelete: "cascade" }),
     depth: integer("depth").notNull().default(0),
     highlightText: text("highlight_text"),
     highlightContext: text("highlight_context"),

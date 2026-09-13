@@ -3,55 +3,43 @@
 last_updated: 2026-09-13
 
 ## phase
-current: 0
+current: 1
 status: complete
-title: "setup + root chat end-to-end"
-spec: .orchestrator/specs/phase-0.md (frozen, revision 2)
+title: "sub-chat core"
+spec: .orchestrator/specs/phase-1.md (frozen, revision 2)
 
 ## phase_status
-- 0: ✅ complete (typecheck pass, 17/17 unit tests pass, build pass — pglite swap fixed native binding issue)
+- 0: ✅ complete (typecheck pass, 17 unit tests pass, build pass — pglite swap)
+- 1: ✅ complete (typecheck pass, 46 unit tests pass, build pass — 1 new route, 29 new tests, ancestor walk, context reconstruction, selection UI, breadcrumb, parent banner)
 
-## active_roles
-- PM: spec delivered (frozen rev 2 after 4 fixes)
-- Backend: code delivered (24 files, 7 tables, 8 routes, 3 unit tests)
-- Frontend: code delivered (26 files, 4 pages, 15 components, 2 e2e specs)
-- DevOps: code delivered (CI workflow, logger)
-- Security: code delivered (threat model, audit, checklist, handoff)
-- Tech Writer: code delivered (README, 3 docs, CONTRIBUTING)
-- UX: deferred to phase 1
-- Reviewer: 2 audit passes (warn → respawn → warn → all verified)
+## active_roles (phase 1)
+- PM: spec delivered (frozen rev 2 after 3 polish fixes + 3 open-question resolutions)
+- Backend: 5 new + 6 modified files, 1 new route, 3 new test files
+- Frontend: 5 new + 6 modified files, 3 new components, 1 e2e spec
+- Security: threat model (54 threats, 10 high), audit stub, checklist updated, handoff
+- Tech Writer: README + 3 docs + .env.example + 1 new endpoints.md
 
 ## open_bugs
 (none)
 
 ## decisions
-- 2026-09-13: stack locked (Next.js 15, Drizzle, assistant-ui, react-d3-tree, Ollama, Auth.js, Vercel)
-- 2026-09-13: org locked (8 roles + Reviewer, 18 agents total)
-- 2026-09-13: model split locked (Muse Spark default, GLM 5.3 Flash for code, M3 for judgment)
-- 2026-09-13: cost optimizations locked (parallel B+C, dynamic model per task, skip-critic on trivial, cheap-reviewer pre-filter, spec files referenced, JSON output)
-- 2026-09-13: autonomy = full auto to production, escalate on: spec change, security tradeoff, irreversible cost, scope cut, production deploy
-- 2026-09-13: 10 open questions decided in .orchestrator/decisions/phase-0-open-questions.md
-- 2026-09-13: 4 PM fixes applied by Orchestrator
-- 2026-09-13: 4 Reviewer high-severity issues + 3 medium fixed (signin rate limit, secure headers middleware, pino redact, per-user rate limit, SSE headers, handoff doc, dead routes)
-- 2026-09-13: react-d3-tree removed (no React 19 support); deferred to phase 2 with alternative
-- 2026-09-13: assistant-ui packages removed (not used in code; Frontend built custom stream client)
-- 2026-09-13: @radix-ui/react-resizable removed (package not found; shadcn Resizable uses different base lib)
-- 2026-09-13: bcryptjs + server-only added as needed deps (per Backend)
-- 2026-09-13: better-sqlite3 native binding build fails in this env; swap to pglite resolves it (pure JS/WASM, no native bindings)
-- 2026-09-13: all 9 role .md files updated with explicit tier-behavior proxy (real model swap not possible in env; behavior encoded in prompts)
+- 2026-09-13: phase 1 spec frozen
+- 2026-09-13: phase 1 open questions resolved (12 of 12)
+- 2026-09-13: pino redact extended with selectedText/highlightText/highlightContext/clientHighlightContext
+- 2026-09-13: BranchRequestSchema now .strict() (rejects unknown fields per OWASP T-T)
+- 2026-09-13: branch rate-limit headers (Retry-After, X-RateLimit-*) on 429
+- 2026-09-13: ancestorTitles added to GET /api/chats/:id (depth-asc array; Frontend consumes for breadcrumb at depth ≥ 3)
+- 2026-09-13: Frontend breadcrumb uses "Private" consistently for foreign-owned crumbs (US-107 AC.3)
 
-## handoffs
-- PM → all roles: .orchestrator/specs/phase-0.md (frozen)
-- Backend → Frontend: .orchestrator/handoffs/api-phase-0.md
-- DevOps → all: .orchestrator/handoffs/devops-phase-0.md
-- Security → Backend/Frontend: .orchestrator/handoffs/security-phase-0.md
-- Tech Writer → all: .orchestrator/handoffs/tech-writer-phase-0.md
+## handoffs (phase 1)
+- PM → all roles: .orchestrator/specs/phase-1.md (frozen)
+- Backend → Frontend: .orchestrator/handoffs/api-phase-1.md
+- Security → Backend/Frontend: .orchestrator/handoffs/security-phase-1.md
+- Tech Writer → all: .orchestrator/handoffs/tech-writer-phase-1.md
 
 ## cost_so_far
-~$0.30 (PM + 5 role agents + 2 reviewer passes + several targeted fixes by orchestrator)
+~$0.80 (cumulative: PM phase 0 + 5 roles phase 0 + 2 reviewer passes phase 0 + 7 orchestrator fixes phase 0 + pglite swap + PM phase 1 + 4 roles phase 1 + 1 reviewer pass phase 1 + 5 orchestrator fixes phase 1)
 
 ## reviewer_verdicts
-- 2026-09-13: PM spec → warn, 4 low-severity polish items, all applied by Orchestrator
-- 2026-09-13: phase-0 all-deliverables → respawn, 4 high-severity + 2 medium + 1 low, all fixed by Orchestrator
-- 2026-09-13: phase-0 post-fix re-audit → warn, 1 medium (3 stale @ai-sdk/react refs in handoff), fixed
-- 2026-09-13: phase-0 typecheck fixup by Orchestrator (25+ type errors → 0)
+- 2026-09-13: PM phase-1 spec → warn, 3 low-severity drift + 3 unresolved open questions, all fixed by Orchestrator
+- 2026-09-13: phase-1 all-deliverables → warn, 1 high (pino redact) + 3 medium (batched ancestor walk, ancestorTitles, rate-limit headers) + 3 low (Zod .strict, breadcrumb, 404-vs-422), 5 of 7 fixed by Orchestrator (the ancestor walk O(d) was kept honest with comment + MAX_ANCESTOR_TOKENS escape hatch)

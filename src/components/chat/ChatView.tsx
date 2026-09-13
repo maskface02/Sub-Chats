@@ -3,11 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
+import { SelectionMenu } from "./SelectionMenu";
+import { ParentContextBanner } from "./ParentContextBanner";
+import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 import type { Conversation, Message } from "@/lib/api-client/types";
 import { Button } from "@/components/ui/button";
 
 export interface ChatViewProps {
   conversation: Conversation;
+  /**
+   * Optional override: how to render breadcrumb ancestors when the API
+   * does not return `parentTitle` / `rootTitle`. Caller can supply the chain
+   * explicitly (e.g. by walking up via separate fetches). When omitted, the
+   * breadcrumb uses whatever the API supplied.
+   */
+  breadcrumbOverride?: BreadcrumbItem[];
 }
 
 type Status =
@@ -25,13 +35,14 @@ function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function ChatView({ conversation }: ChatViewProps) {
+export function ChatView({ conversation, breadcrumbOverride }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>(conversation.messages);
   const [streaming, setStreaming] = useState<string>("");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamingIdRef = useRef<string>("");
+  const headerRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -45,7 +56,18 @@ export function ChatView({ conversation }: ChatViewProps) {
     el.scrollTop = el.scrollHeight;
   }, [messages.length, streaming]);
 
+  // Focus the header on conversation change (per spec §9 focus management).
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    el.focus();
+  }, [conversation.id]);
+
   const lastUserMessage = findLastUser(messages);
+  const isSubChat = conversation.depth >= 1;
+  const composerPlaceholder = isSubChat
+    ? buildHighlightPlaceholder(conversation.highlightText)
+    : undefined;
 
   const streamOnce = useCallback(
     async (opts: {
@@ -200,9 +222,15 @@ export function ChatView({ conversation }: ChatViewProps) {
 
   return (
     <div className="flex h-full flex-col">
+      <Breadcrumb
+        items={breadcrumbOverride ?? buildBreadcrumb(conversation)}
+      />
+
       <header className="flex h-14 items-center justify-between border-b bg-background px-4">
         <h1
-          className="truncate text-base font-semibold"
+          ref={headerRef}
+          tabIndex={-1}
+          className="truncate text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={conversation.title}
         >
           {conversation.title || "New chat"}
@@ -211,6 +239,16 @@ export function ChatView({ conversation }: ChatViewProps) {
           {messages.length} {messages.length === 1 ? "message" : "messages"}
         </span>
       </header>
+
+      {isSubChat ? (
+        <ParentContextBanner
+          highlightText={conversation.highlightText}
+          highlightContext={conversation.highlightContext}
+          parentMessageContent={conversation.parentMessageContent ?? null}
+          parentTitle={conversation.parentTitle ?? null}
+          parentMessageId={conversation.parentMessageId ?? null}
+        />
+      ) : null}
 
       <div
         ref={scrollRef}
@@ -258,9 +296,63 @@ export function ChatView({ conversation }: ChatViewProps) {
               ? "AI responding…"
               : null
         }
+        placeholder={composerPlaceholder}
       />
+
+      <SelectionMenu conversationId={conversation.id} />
     </div>
   );
+}
+
+function buildBreadcrumb(conv: Conversation): BreadcrumbItem[] {
+  const items: BreadcrumbItem[] = [
+    { id: null, title: "Home", unlinked: true },
+  ];
+  if (conv.depth === 0) {
+    items.push({
+      id: conv.id,
+      title: conv.title || "Untitled",
+      unlinked: true,
+    });
+    return items;
+  }
+
+  // Use the full ancestor chain (ancestorTitles) when the server provides
+  // it (depth ≥ 2 — covers the chain from direct parent up to root).
+  // Fall back to rootTitle for older responses.
+  const chain =
+    conv.ancestorTitles && conv.ancestorTitles.length > 0
+      ? conv.ancestorTitles
+      : conv.rootConversationId !== conv.id && conv.rootTitle
+        ? [{ id: conv.rootConversationId, title: conv.rootTitle, depth: 0 }]
+        : [];
+
+  for (const a of chain) {
+    if (a.title) {
+      items.push({ id: a.id, title: a.title });
+    } else {
+      // Foreign-owned ancestor: title lookup returned null.
+      // "Private" (not "Unknown") — consistent with US-107 AC.3 — avoids
+      // hinting that the ancestor exists vs is missing.
+      items.push({ id: null, title: "Private", unlinked: true });
+    }
+  }
+
+  items.push({
+    id: conv.id,
+    title: conv.title || "New chat",
+    unlinked: true,
+  });
+  return items;
+}
+
+function buildHighlightPlaceholder(highlight: string | null): string {
+  if (!highlight) return "Message the AI…";
+  const cleaned = highlight.trim();
+  if (!cleaned) return "Message the AI…";
+  const words = cleaned.split(/\s+/).slice(0, 3);
+  if (words.length === 0) return "Message the AI…";
+  return `Ask about ${words.join(" ")}…`;
 }
 
 function findLastUser(messages: Message[]): Message | null {

@@ -126,6 +126,27 @@ Browser                                 Next.js                       DB
   │ ◀──200 {items, nextCursor}─────────│                              │
 ```
 
+## Sub-chat tree model
+
+Conversations form a tree:
+- Root conversation: `parentId = null`, `depth = 0`, `rootConversationId = self`
+- Sub-chat: `parentId = <source>`, `depth = parent.depth + 1`, `rootConversationId = source.rootConversationId`
+- The tree is the recursive closure of `parentId`
+
+### Context reconstruction (sub-chats only)
+
+When a user sends a message in a sub-chat, the server:
+1. Loads the target conversation
+2. Walks up the parent chain (root → ... → direct parent)
+3. Verifies ownership of every ancestor (foreign-owned → 503 ANCESTOR_UNAVAILABLE)
+4. Collects all messages from all ancestors in chronological order
+5. Prepends a system note explaining the context
+6. Passes the full array to the model
+
+This is `O(d)` round-trips where `d = depth`. A batched query (`messages.listByConversationIds`) flattens it to `O(1)` round-trips for messages.
+
+See `.orchestrator/specs/phase-1.md` §7 for the algorithm.
+
 ## Conversation tree (phase 0 shape)
 
 Phase 0 only ships **root** conversations — every row in `conversations` has `parentId=null`, `depth=0`, and `rootConversationId=<self>`. The schema already carries the columns phase 1 needs:

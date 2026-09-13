@@ -80,6 +80,16 @@ Open <http://localhost:3000>. You should land on the sign-in page (or on the no-
 3. Type a message in the composer and press **Enter**. The first token of the AI reply appears within ~2 s on a warm cache; streaming continues until the model is done.
 4. Send a few more messages. Reload the page — your conversation is restored from the database.
 
+## Try the branching feature
+
+1. Send a message and get a response
+2. In the assistant's reply, highlight a word or phrase (e.g., "vector database")
+3. A floating "Ask about this" pill appears above your selection
+4. Click the pill → a new sub-chat opens
+5. The sub-chat shows the parent context in a banner above the message list
+6. Type your follow-up ("what's the best one for small teams?") and press Enter
+7. The AI responds with full ancestor context — it knows what you mean by "it"
+
 ## Verifying the provider
 
 A quick smoke test for ops / DevOps without sending a chat:

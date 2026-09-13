@@ -1,6 +1,6 @@
 # Security Checklist (running tracker)
 
-**phase:** 0
+**phase:** 0 + 1
 **last_updated:** 2026-09-13
 **reviewer:** security
 
@@ -15,7 +15,7 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 - [x] OWASP Top 10 (2025) mapping included
 - [x] Spec hardening requests raised (9 items)
 - [ ] Code audit pending (Backend + Frontend delivery)
-- [ ] Spec hardening items resolved or accepted by Orchestrator
+- [~] Spec hardening items resolved or accepted by Orchestrator (most resolved in phase 1 implementation; formal sign-off pending)
 
 ### authentication
 - [x] bcrypt cost = 12 (verify `bcrypt.hash(password, 12)` in signup)
@@ -114,12 +114,114 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 
 ---
 
+## phase 1
+
+### threat modeling
+- [x] STRIDE model complete (`.orchestrator/security/threat-models/phase-1.md`)
+- [x] OWASP Top 10 (2025) mapping included
+- [x] Spec hardening requests raised (12 items; top 3 recommended for sign-off)
+- [ ] Code audit pending (Backend + Frontend delivery)
+- [ ] Spec hardening items resolved or accepted by Orchestrator
+
+### sub-chat auth & access control
+- [ ] Sub-chat ownership check uses `sub.userId` (NOT `parent.userId`) on every route
+- [ ] `POST /api/chats/:id/branch` ownership check filters by `userId=session.user.id`; cross-user returns 404 NOT_FOUND (NOT 403)
+- [ ] `GET /api/chats/:id` returns 404 for foreign-owned conversation
+- [ ] `POST /api/chats/:id/messages` returns 404 for foreign-owned conversation
+- [ ] Ancestor walk verifies `cursor.userId === session.user.id` on EVERY iteration; first miss throws 503 ANCESTOR_UNAVAILABLE
+- [ ] 503 ANCESTOR_UNAVAILABLE returned for BOTH foreign-owned AND missing ancestors (same code — no leak)
+- [ ] `parentTitle`/`rootTitle` lookup in `GET /api/chats/:id` filtered by `userId === session.user.id`; null on miss
+- [ ] Foreign-owned ancestor crumb renders "Private" with no link (Frontend US-107 AC.3)
+- [ ] Breadcrumb full chain title fetch: API returns `ancestorTitles: [{id, title, depth}]` for depth ≥ 3 (US-108 AC.3, T-D-5 spec hardening #2)
+
+### sub-chat input validation (T-S, T-T)
+- [ ] Branch body Zod `.strict()` with EXACTLY 5 fields (messageId, selectedText, charStart, charEnd, clientHighlightContext?); rejects `parentId`, `userId`, `rootConversationId`, `depth`, `createdAt`
+- [ ] `selectedText` 1-2000 chars enforced; `.refine(s => s.trim().length > 0)` rejects whitespace-only
+- [ ] `charStart` and `charEnd` parsed as `z.number().int().nonnegative()`; range check `0 ≤ charStart < charEnd ≤ message.content.length`
+- [ ] Slice validation: `content.slice(charStart, charEnd).trim() === selectedText.trim()` enforced; 422 INVALID_SELECTION on mismatch
+- [ ] `messageId` filtered by `conversationId = :id AND role = 'assistant'`; 422 INVALID_SELECTION on miss
+- [ ] `clientHighlightContext` ≤ 500 chars enforced (Zod `.max(500)`)
+- [ ] `highlightContext` (server-computed) falls back to full content (truncated to 500 chars) when regex finds no sentence terminators (T-T-9)
+- [ ] 422 INVALID_SELECTION response `fields` contains ONLY field name + static message — NEVER user-supplied value (T-I-3)
+
+### server-side computed values (T-S, T-E)
+- [ ] `parentId` set server-side as `= :id` (NOT from body)
+- [ ] `rootConversationId` derived as `= source.rootConversationId ?? source.id` (NOT from body)
+- [ ] `depth` set as `= source.depth + 1` (NOT from body)
+- [ ] `userId` always `= session.user.id` (NOT from body)
+- [ ] `title = 'New chat'` on creation; auto-derive on first user message (Q2)
+- [ ] Title auto-derive: split on whitespace, take first 6 tokens, max 60 chars total; no HTML
+- [ ] System note uses `process.env.SUBSCHAT_SYSTEM_PROMPT` env var with default (Q11); placeholder substitution `{parentTitle}` and `{highlightText}`
+
+### ancestor walk (T-E-2, T-E-7, T-D-2)
+- [ ] Ancestor walk ownership check on EVERY iteration (not just direct parent)
+- [ ] **Ancestor walk implemented as batched fetch or recursive CTE** (NOT sequential `db.conversations.get(parentId)`) — spec hardening #1
+- [ ] Message batched fetch `listByConversationIds(ancestorIds + [targetId])` returns messages ordered correctly
+- [ ] On foreign-owned or missing ancestor: 503 ANCESTOR_UNAVAILABLE; user message is STILL persisted (per US-105 AC.6)
+- [ ] System note prepended to model context ONLY — NOT persisted to `messages` table
+- [ ] New user message persists on sub-chat only (`conversationId = subChat.id`), NOT on any ancestor
+
+### info disclosure (T-I)
+- [ ] `highlightText`, `parentTitle`, `rootTitle`, `highlightContext`, `selectedText`, `clientHighlightContext` rendered as React text child ONLY (no `dangerouslySetInnerHTML`)
+- [ ] Highlight rendering: source message split into 3 text segments (before / `<mark>{highlightText}</mark>` / after); each rendered via React text child
+- [ ] Breadcrumb timing: all ancestor titles fetched in single query (or batched) — not sequential (T-I-2)
+- [ ] Cross-user 404 on branch route — never 403
+- [ ] Conversation list (`GET /api/chats`) filters `parentId IS NULL` — root only; sub-chats not listed as siblings (T-I-10)
+
+### DoS / cost (T-D)
+- [ ] Branch rate limit: 30 / 10 min / user, in-memory token bucket; 429 with `X-RateLimit-Limit/Remaining/Reset` and `Retry-After` headers
+- [ ] Phase 0 message rate limit (60/min/user) applies to sub-chat conversations
+- [ ] Selection event listener debounced 50ms (Q10, T-D-4)
+- [ ] Pill positioning uses `requestAnimationFrame` on scroll (T-D-8)
+- [ ] `Content-Length` cap (16KB) from phase 0 hardening applies to `/api/chats/:id/branch`
+- [ ] Right-click menu position flips + clamps on viewport overflow (US-102 AC.5)
+
+### schema (T-T-11)
+- [ ] `parentId` has FK constraint `.references(() => conversations.id)` per Q7 (verify in `src/lib/db/schema.ts:80` and Drizzle migration)
+- [ ] FK migration safe in dev (NULL allowed, no orphan rows) and prod (verify no orphan rows before apply)
+
+### logging & monitoring (T-R, T-I-8)
+- [ ] Pino redact extended: `*.selectedText`, `*.highlightText`, `*.highlightContext`, `*.clientHighlightContext` added to redact list
+- [ ] Branch events logged at `info` (201 success), `warn` (404 cross-user, 503 ANCESTOR_UNAVAILABLE), `info` (422 INVALID_SELECTION)
+- [ ] Never log `selectedText`, `clientHighlightContext`, `highlightContext`, or `message.content` content (only metadata)
+- [ ] All branch log lines include `userId`, `sourceConvId`, `newConvId?`, `depth`, `requestId`
+
+### tests (spec §11 DoD + recommended additions)
+- [ ] Vitest: cross-user 404 (not 403) on `POST /api/chats/:id/branch` (T-E-1)
+- [ ] Vitest: foreign-owned ancestor returns 503 ANCESTOR_UNAVAILABLE (T-E-2)
+- [ ] Vitest: foreign-owned ancestor returns SAME 503 code as missing ancestor (T-I-1, T-I-6)
+- [ ] Vitest: `messageId` from different conversation returns 422 (T-S-2)
+- [ ] Vitest: `selectedText` whitespace-only returns 422 (T-T-7)
+- [ ] Vitest: charStart/charEnd out-of-bounds returns 422 (T-T-5)
+- [ ] Vitest: slice mismatch returns 422 (T-S-3)
+- [ ] Vitest: highlightContext fallback for no-terminator message (T-T-9)
+- [ ] Vitest: title auto-derive (6 words max, 60 chars max, no HTML)
+- [ ] Vitest: branch body `.strict()` rejects unknown fields (`parentId`, `userId`, etc.)
+- [ ] Vitest: ancestor walk returns messages in correct order (root → ... → parent → target)
+- [ ] Vitest: system note template substitution with `{parentTitle}` and `{highlightText}` defaults
+- [ ] Playwright: select text → branch → sub-chat shows banner → send message → AI persists on sub-chat only
+- [ ] Playwright: cross-user 404 on `POST /api/chats/:id/branch`
+- [ ] Playwright: cross-user 404 on `GET /c/<other-user-sub-chat>`
+- [ ] Playwright: sub-chat can spawn sub-chat (depth ≥ 2)
+- [ ] Playwright: breadcrumb renders full chain at depth ≥ 3 (validates T-D-5 spec hardening)
+- [ ] Playwright: foreign-owned ancestor shows "Private" crumb (no leak)
+
+### sign-off gates
+- [ ] STRIDE model approved by Orchestrator
+- [ ] Spec hardening requests #1, #2, #3 (top 3 from threat-model) resolved or accepted
+- [ ] Code audit complete (after Backend + Frontend delivery)
+- [ ] No `high` or `critical` findings open
+- [ ] Reviewed by Critic (Muse Spark)
+- [ ] Phase 1 marked `secure` in `.orchestrator/STATE.md`
+
+---
+
 ## phase-by-phase tracker
 
 | phase | threat model | checklist | audit | sign-off |
 |---|---|---|---|---|
 | 0    | done (preliminary) | this file | pending code review | pending |
-| 1    | — | — | — | — |
+| 1    | done (preliminary) | this file | pending code review | pending |
 | 2    | — | — | — | — |
 | 3    | — | — | — | — |
 
@@ -131,3 +233,9 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 - `next-auth@5.0.0-beta.25` is a pre-release — accept risk, document pin
 - `pino-pretty` is a dev dep — confirm not in production bundle (Backend)
 - Anthropic SDK present but unwired (per spec §9 decision #10) — no threat model entry needed
+- **phase 1 spec hardening items**:
+  - #1 ancestor walk batched fetch — pending Orchestrator / Backend decision
+  - #2 breadcrumb `ancestorTitles` field — pending Orchestrator / Backend decision
+  - #3 pino redact extended — pending Backend decision
+  - remaining hardening items (#4–#12) — pending code-review-time decisions
+- Phase 1 FK migration safety: verify no orphan rows in prod before applying Q7 FK constraint

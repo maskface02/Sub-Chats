@@ -9,6 +9,9 @@ export const ERROR_CODES = [
   "NOT_FOUND",
   "NO_PROVIDER",
   "PROVIDER_FAILED",
+  "INVALID_SELECTION",
+  "ANCESTOR_UNAVAILABLE",
+  "INTERNAL",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -126,6 +129,37 @@ export const ChatWithMessagesResponseSchema = z.object({
 export type ChatWithMessagesResponse = z.infer<
   typeof ChatWithMessagesResponseSchema
 >;
+
+// ---------- branch (sub-chat) ----------
+
+export const BranchRequestSchema = z
+  .object({
+    messageId: z.string().min(1, "messageId is required"),
+    selectedText: z.string().min(1).max(2000),
+    charStart: z.number().int().min(0),
+    charEnd: z.number().int().min(1),
+    clientHighlightContext: z.string().max(500).optional(),
+  })
+  .strict()
+  .refine((d) => d.charStart < d.charEnd, {
+    message: "charEnd must be greater than charStart",
+    path: ["charEnd"],
+  });
+
+export type BranchRequest = z.infer<typeof BranchRequestSchema>;
+
+export const BranchResponseSchema = z.object({
+  id: z.string(),
+  parentId: z.string(),
+  rootConversationId: z.string(),
+  depth: z.number().int().min(1),
+  highlightText: z.string(),
+  highlightContext: z.string(),
+  title: z.string(),
+  createdAt: z.string(),
+});
+
+export type BranchResponse = z.infer<typeof BranchResponseSchema>;
 
 export const SendMessageRequestSchema = z.object({
   content: z

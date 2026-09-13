@@ -1,5 +1,3 @@
-import { headers } from "next/headers";
-
 import type { ApiErrorBody } from "./types";
 
 export interface ApiFetchOptions extends Omit<RequestInit, "body" | "headers"> {
@@ -53,6 +51,8 @@ export async function apiFetch<T>(
   let cookieHeader = cookie ?? "";
   if (forwardCookies !== false && typeof window === "undefined" && !cookieHeader) {
     try {
+      // Dynamic import keeps `next/headers` out of the client bundle.
+      const { headers } = await import("next/headers");
       const h = await headers();
       const c = h.get("cookie");
       if (c) cookieHeader = c;

@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
@@ -38,6 +38,66 @@ export async function GET(
     .where(eq(messages.conversationId, id))
     .orderBy(asc(messages.createdAt));
 
+  // Resolve parent + root titles + full ancestor chain in batched queries
+  // (additive fields). Foreign-owned ancestors resolve to null entries
+  // (no existence leak; UI renders "Private").
+  const lookupIds = Array.from(
+    new Set(
+      [conv.parentId, conv.rootConversationId].filter(
+        (x): x is string => Boolean(x) && x !== conv.id,
+      ),
+    ),
+  );
+
+  const titleLookup = new Map<string, string>();
+  if (lookupIds.length > 0) {
+    const titleRows = await db
+      .select({ id: conversations.id, title: conversations.title })
+      .from(conversations)
+      .where(
+        and(
+          inArray(conversations.id, lookupIds),
+          eq(conversations.userId, userId),
+        ),
+      );
+    for (const r of titleRows) titleLookup.set(r.id, r.title);
+  }
+
+  const parentTitle = conv.parentId
+    ? titleLookup.get(conv.parentId) ?? null
+    : null;
+  const rootTitle =
+    conv.rootConversationId && conv.rootConversationId !== conv.id
+      ? titleLookup.get(conv.rootConversationId) ?? null
+      : null;
+
+  // Full ancestor chain for the breadcrumb. Walk the parent chain client-side
+  // by collecting ids (one cheap SELECT per level is unavoidable without a
+  // recursive CTE; for a 5-deep tree this is still 5 quick PK lookups).
+  const ancestorIds: string[] = [];
+  let cursorId: string | null = conv.parentId;
+  while (cursorId && cursorId !== conv.id) {
+    ancestorIds.push(cursorId);
+    const row = await db
+      .select({ id: conversations.id, parentId: conversations.parentId })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.id, cursorId),
+          eq(conversations.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (row.length === 0) break;
+    cursorId = row[0]!.parentId;
+  }
+
+  const ancestorTitles = ancestorIds.map((aid, i) => ({
+    id: aid,
+    title: titleLookup.get(aid) ?? null,
+    depth: Math.max(0, conv.depth - 1 - i),
+  }));
+
   return jsonRaw(
     {
       id: conv.id,
@@ -45,6 +105,11 @@ export async function GET(
       parentId: conv.parentId,
       rootConversationId: conv.rootConversationId,
       depth: conv.depth,
+      parentTitle,
+      rootTitle,
+      highlightText: conv.highlightText,
+      highlightContext: conv.highlightContext,
+      ancestorTitles,
       createdAt: conv.createdAt.toISOString(),
       updatedAt: conv.updatedAt.toISOString(),
       messages: msgRows.map((m) => ({

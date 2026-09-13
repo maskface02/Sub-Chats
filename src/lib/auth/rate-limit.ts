@@ -6,6 +6,9 @@ const MESSAGES_PER_HOUR = 500;
 const MESSAGE_MINUTE_WINDOW_MS = 60 * 1000;
 const MESSAGE_HOUR_WINDOW_MS = 60 * 60 * 1000;
 
+const BRANCH_WINDOW_MS = 10 * 60 * 1000;
+const BRANCH_MAX_ATTEMPTS = 30;
+
 type Bucket = {
   attempts: number;
   windowStart: number;
@@ -19,6 +22,7 @@ type DualBucket = {
 const globalForRl = globalThis as unknown as {
   __rateLimitBuckets?: Map<string, Bucket>;
   __messageRateLimitBuckets?: Map<string, DualBucket>;
+  __branchRateLimitBuckets?: Map<string, Bucket>;
 };
 
 const buckets: Map<string, Bucket> =
@@ -28,6 +32,10 @@ globalForRl.__rateLimitBuckets = buckets;
 const messageBuckets: Map<string, DualBucket> =
   globalForRl.__messageRateLimitBuckets ?? new Map<string, DualBucket>();
 globalForRl.__messageRateLimitBuckets = messageBuckets;
+
+const branchBuckets: Map<string, Bucket> =
+  globalForRl.__branchRateLimitBuckets ?? new Map<string, Bucket>();
+globalForRl.__branchRateLimitBuckets = branchBuckets;
 
 export function checkRateLimit(ip: string): {
   allowed: boolean;
@@ -102,7 +110,37 @@ export function checkMessagesRateLimit(userId: string): {
   return { allowed: true, retryAfterMs: 0, reason: null };
 }
 
+export function checkBranchRateLimit(userId: string): {
+  allowed: boolean;
+  retryAfterMs: number;
+  reason: string | null;
+} {
+  const now = Date.now();
+  const existing = branchBuckets.get(userId);
+
+  if (!existing || now - existing.windowStart >= BRANCH_WINDOW_MS) {
+    branchBuckets.set(userId, { attempts: 1, windowStart: now });
+    return { allowed: true, retryAfterMs: 0, reason: null };
+  }
+
+  if (existing.attempts >= BRANCH_MAX_ATTEMPTS) {
+    return {
+      allowed: false,
+      retryAfterMs: Math.max(0, BRANCH_WINDOW_MS - (now - existing.windowStart)),
+      reason: "branch-quota-exceeded",
+    };
+  }
+
+  existing.attempts += 1;
+  return { allowed: true, retryAfterMs: 0, reason: null };
+}
+
+export function resetBranchRateLimit(userId: string): void {
+  branchBuckets.delete(userId);
+}
+
 export const rateLimitConfig = {
   signin: { windowMs: SIGNIN_WINDOW_MS, maxAttempts: SIGNIN_MAX_ATTEMPTS },
   messages: { perMinute: MESSAGES_PER_MINUTE, perHour: MESSAGES_PER_HOUR },
+  branch: { windowMs: BRANCH_WINDOW_MS, maxAttempts: BRANCH_MAX_ATTEMPTS },
 } as const;

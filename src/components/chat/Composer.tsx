@@ -9,6 +9,7 @@ export interface ComposerProps {
   disabled?: boolean;
   statusLabel?: string | null;
   className?: string;
+  placeholder?: string;
 }
 
 const MAX_LENGTH = 8000;
@@ -18,6 +19,7 @@ export function Composer({
   disabled = false,
   statusLabel = null,
   className,
+  placeholder,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -63,7 +65,7 @@ export function Composer({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? "AI is responding…" : "Message the AI…"}
+            placeholder={disabled ? "AI is responding…" : placeholder ?? "Message the AI…"}
             disabled={disabled}
             rows={1}
             maxLength={MAX_LENGTH}

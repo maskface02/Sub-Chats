@@ -43,9 +43,25 @@ export interface Conversation {
   depth: number;
   highlightText: string | null;
   highlightContext: string | null;
+  parentTitle?: string | null;
+  rootTitle?: string | null;
+  parentMessageContent?: string | null;
+  parentMessageId?: string | null;
+  ancestorTitles?: Array<{ id: string; title: string | null; depth: number }>;
   createdAt: string;
   updatedAt: string;
   messages: Message[];
+}
+
+export interface BranchResponse {
+  id: string;
+  parentId: string;
+  rootConversationId: string;
+  depth: number;
+  highlightText: string;
+  highlightContext: string | null;
+  title: string;
+  createdAt: string;
 }
 
 export interface CreateChatResponse {

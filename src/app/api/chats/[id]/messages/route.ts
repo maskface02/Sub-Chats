@@ -1,8 +1,16 @@
 import { type NextRequest } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { jsonError, SendMessageRequestSchema, type ErrorCode } from "@/lib/types/api";
-import { streamChatResponse } from "@/lib/ai/stream";
+import {
+  jsonError,
+  SendMessageRequestSchema,
+  type ErrorCode,
+} from "@/lib/types/api";
+import { db } from "@/lib/db";
+import { conversations } from "@/lib/db/schema";
+import { deriveTitle, streamChatResponse } from "@/lib/ai/stream";
 import { checkMessagesRateLimit } from "@/lib/auth/rate-limit";
+import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,11 +53,43 @@ export async function POST(
     return jsonError(422, "INVALID_INPUT", undefined, fields);
   }
 
+  // Resolve the target conversation + ownership (404 on cross-user).
+  const convRows = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)))
+    .limit(1);
+  if (convRows.length === 0) {
+    return jsonError(404, "NOT_FOUND", "Conversation not found");
+  }
+  const conv = convRows[0]!;
+
+  // Title auto-derive on the first user message of a conversation whose
+  // title is still the placeholder. Triggered immediately (no AI latency).
+  if (conv.title === "New chat") {
+    const derivedTitle = deriveTitle(parsed.data.content);
+    if (derivedTitle !== "New chat") {
+      try {
+        await db
+          .update(conversations)
+          .set({ title: derivedTitle })
+          .where(eq(conversations.id, conv.id));
+      } catch (err) {
+        log.error(
+          { err, conversationId: conv.id },
+          "failed to auto-derive title",
+        );
+        // non-fatal — stream still proceeds with placeholder
+      }
+    }
+  }
+
   const result = await streamChatResponse({
     conversationId: id,
     userId,
     userMessage: parsed.data.content,
     clientMessageId: parsed.data.clientMessageId,
+    depth: conv.depth,
   });
 
   if (result.ok) {
@@ -59,8 +99,9 @@ export async function POST(
   const errorBody = result.body as {
     error: { code: ErrorCode; message?: string };
   };
-  const status = (result.status === 404 || result.status === 502 || result.status === 503)
-    ? result.status
-    : 500;
+  const status =
+    result.status === 404 || result.status === 502 || result.status === 503
+      ? result.status
+      : 500;
   return jsonError(status, errorBody.error.code, errorBody.error.message);
 }
