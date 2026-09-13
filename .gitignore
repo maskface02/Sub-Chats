@@ -1,0 +1,49 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+build/
+
+# misc
+.DS_Store
+*.pem
+*.log
+*.tsbuildinfo
+next-env.d.ts
+
+# env
+.env
+.env*.local
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# db
+*.sqlite
+*.sqlite-journal
+*.db
+drizzle/.snapshots/
+
+# vercel
+.vercel
+
+# sentry
+.sentryclirc
+
+# editor
+.vscode/
+.idea/
+
+# tests
+test-results/
+playwright-report/
+playwright/.cache/
+
+# orchestrator state (keep structure, ignore runtime noise)
+.orchestrator/.cache/
