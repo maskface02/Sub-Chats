@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { allowGuestAccess } from "@/lib/config/flags";
 import { getChat, getHealth, listChats } from "@/lib/api-client/chats";
 import { ApiError } from "@/lib/api-client/base";
 import { AppShell } from "@/components/layout/AppShell";
@@ -74,6 +75,7 @@ export default async function ChatPage({ params }: PageProps) {
     return (
       <AppShell
         user={user}
+        guestMode={allowGuestAccess()}
         chats={listResult.items}
         chatsError={listResult.error}
         currentChatId={id}
@@ -95,6 +97,7 @@ export default async function ChatPage({ params }: PageProps) {
   return (
     <AppShell
       user={user}
+      guestMode={allowGuestAccess()}
       chats={listResult.items}
       chatsError={listResult.error}
       currentChatId={id}

@@ -13,6 +13,7 @@ import {
   verificationTokens,
 } from "@/lib/db/schema";
 import { log } from "@/lib/log";
+import { allowGuestAccess } from "@/lib/config/flags";
 
 declare module "next-auth" {
   interface Session {
@@ -38,7 +39,7 @@ export const authConfig: NextAuthConfig = {
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
-  session: { strategy: "database" },
+  session: { strategy: "jwt" },
   trustHost: true,
   pages: {
     signIn: "/signin",
@@ -82,9 +83,16 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    async session({ session, user }) {
-      if (session.user && user?.id) {
-        session.user.id = user.id;
+    // JWT strategy (credentials requires it — database sessions are
+    // unsupported with the Credentials provider in Auth.js v5). Capture the
+    // db user id into the token at sign-in, surface it on the session.
+    async jwt({ token, user }) {
+      if (user?.id) token.id = user.id;
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token?.id) {
+        session.user.id = token.id as string;
       }
       return session;
     },
@@ -103,6 +111,55 @@ export const authConfig: NextAuthConfig = {
 
 export const { handlers, auth: authFn, signIn, signOut } = NextAuth(authConfig);
 
+const GUEST_EMAIL = "guest@localhost";
+const FAR_FUTURE_EXPIRES = "9999-12-31T23:59:59.999Z";
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __guestUserId: string | undefined;
+}
+
+/**
+ * Ensures the shared guest user row exists (FK target for guest-mode data)
+ * and returns its id. Memoized per process — one DB round-trip ever.
+ */
+async function ensureGuestUserId(): Promise<string> {
+  if (globalThis.__guestUserId) return globalThis.__guestUserId;
+  await db
+    .insert(users)
+    .values({ email: GUEST_EMAIL, name: "Guest" })
+    .onConflictDoNothing();
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, GUEST_EMAIL))
+    .limit(1);
+  const id = rows[0]!.id;
+  globalThis.__guestUserId = id;
+  log.info({ guestUserId: id }, "guest access enabled — synthetic session");
+  return id;
+}
+
+/**
+ * Auth entry point used by every route/page.
+ * 1. real session (JWT cookie) when present
+ * 2. ALLOW_GUEST_ACCESS=true → synthetic guest session (direct access, no login)
+ * 3. null (callers redirect to /signin as before)
+ */
 export async function auth() {
-  return authFn();
+  const session = await authFn();
+  if (session?.user?.id) return session;
+  if (allowGuestAccess()) {
+    const guestId = await ensureGuestUserId();
+    return {
+      user: {
+        id: guestId,
+        email: GUEST_EMAIL,
+        name: "Guest",
+        image: null,
+      },
+      expires: FAR_FUTURE_EXPIRES,
+    };
+  }
+  return session;
 }

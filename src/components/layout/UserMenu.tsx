@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 export interface UserMenuProps {
   email: string;
   name?: string | null;
+  /** Guest mode: no session to end — hide the sign-out control. */
+  guestMode?: boolean;
 }
 
-export function UserMenu({ email, name }: UserMenuProps) {
+export function UserMenu({ email, name, guestMode = false }: UserMenuProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -41,18 +43,20 @@ export function UserMenu({ email, name }: UserMenuProps) {
       >
         Settings
       </Link>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={handleSignOut}
-        disabled={pending}
-        aria-label="Sign out"
-        aria-busy={pending}
-        title={error ?? undefined}
-      >
-        {pending ? "Signing out…" : "Sign out"}
-      </Button>
+      {guestMode ? null : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleSignOut}
+          disabled={pending}
+          aria-label="Sign out"
+          aria-busy={pending}
+          title={error ?? undefined}
+        >
+          {pending ? "Signing out…" : "Sign out"}
+        </Button>
+      )}
     </div>
   );
 }

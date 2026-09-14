@@ -43,6 +43,9 @@ services:
       AUTH_TRUST_HOST: "true"
       AUTH_URL: http://localhost:3000
       LOG_LEVEL: info
+      # Direct access: no sign-up/sign-in — everyone shares one guest user.
+      # Set to "false" to require real accounts (signup/signin works via JWT).
+      ALLOW_GUEST_ACCESS: "true"
       # Optional: enable an AI provider for this local deployment
       # OPENAI_API_KEY: ""
       # ADMIN_ALLOW_OLLAMA_USERS: "false"

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { allowGuestAccess } from "@/lib/config/flags";
 import { listChats, getHealth } from "@/lib/api-client/chats";
 import { AppShell } from "@/components/layout/AppShell";
 import { NewChatButton } from "@/components/chat/NewChatButton";
@@ -52,6 +53,7 @@ export default async function HomePage() {
         name: session.user.name ?? null,
         image: session.user.image ?? null,
       }}
+      guestMode={allowGuestAccess()}
       chats={listResult.items}
       chatsError={listResult.error}
       currentChatId={null}

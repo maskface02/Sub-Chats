@@ -22,6 +22,8 @@ export interface AppShellProps {
   headerSlot?: ReactNode;
   /** Current conversation, when available — powers the tree-map sidebar. */
   conversation?: Conversation | null;
+  /** Guest auto-session mode — hides sign-out. */
+  guestMode?: boolean;
   children: ReactNode;
 }
 
@@ -33,6 +35,7 @@ export function AppShell({
   providerInfo,
   headerSlot,
   conversation = null,
+  guestMode = false,
   children,
 }: AppShellProps) {
   return (
@@ -49,7 +52,7 @@ export function AppShell({
         <div className="flex items-center gap-3">
           {headerSlot}
           {conversation ? <TreeDrawer conversation={conversation} /> : null}
-          <UserMenu email={user.email} name={user.name} />
+          <UserMenu email={user.email} name={user.name} guestMode={guestMode} />
         </div>
       </header>
 
