@@ -55,6 +55,9 @@ export function invalidateTree(rootId?: string | null): void {
     void client.invalidateQueries({
       queryKey: rootId ? ["tree", rootId] : ["tree"],
     });
+    // Root-level list (ChatTreeSidebar) — refreshed so deletes/new roots
+    // reflect immediately; branch creation re-runs this for free.
+    void client.invalidateQueries({ queryKey: ["chats"] });
   }
 }
 

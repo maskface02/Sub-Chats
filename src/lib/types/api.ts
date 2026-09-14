@@ -79,6 +79,7 @@ export const ChatListItemSchema = z.object({
   title: z.string(),
   updatedAt: z.string(),
   preview: z.string().nullable(),
+  childrenCount: z.number().int().min(0),
 });
 
 export type ChatListItem = z.infer<typeof ChatListItemSchema>;

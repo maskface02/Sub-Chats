@@ -44,6 +44,11 @@ async function listChats(
       title: conversations.title,
       updatedAt: conversations.updatedAt,
       preview: messages.content,
+      childrenCount: sql<number>`(
+        SELECT COUNT(*)::int FROM conversations c2
+        WHERE c2.parent_id = ${conversations.id}
+          AND c2.deleted_at IS NULL
+      )`,
     })
     .from(conversations)
     .leftJoin(
@@ -74,6 +79,7 @@ async function listChats(
         title: r.title,
         updatedAt: r.updatedAt.toISOString(),
         preview: r.preview ? r.preview.slice(0, 120) : null,
+        childrenCount: Number(r.childrenCount ?? 0),
       });
     }
   }

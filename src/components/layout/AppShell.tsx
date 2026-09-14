@@ -5,6 +5,7 @@ import { NewChatButton } from "@/components/chat/NewChatButton";
 import { ProviderBanner } from "@/components/chat/ProviderBanner";
 import { RetryButton } from "@/components/layout/RetryButton";
 import { TreeDrawer, TreeMapSidebar } from "@/components/tree/TreeMapSidebar";
+import { ChatTreeSidebar } from "@/components/tree/ChatTreeSidebar";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import type {
   ChatListItem,
@@ -42,6 +43,7 @@ export function AppShell({
     <div className="flex min-h-screen flex-col bg-background">
       <header className="flex h-14 items-center justify-between gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center gap-3">
+          <ChatTreeSidebar currentChatId={currentChatId} />
           <Link href="/" className="font-semibold tracking-tight">
             Sub-chats
           </Link>

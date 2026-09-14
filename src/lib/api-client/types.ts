@@ -19,6 +19,7 @@ export interface ChatListItem {
   title: string;
   updatedAt: string;
   preview: string | null;
+  childrenCount: number;
 }
 
 export interface ChatListResponse {
