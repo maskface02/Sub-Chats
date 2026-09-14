@@ -1,0 +1,53 @@
+# Local production-like deployment: real Postgres + the Next.js app.
+#
+#   docker compose up -d          → postgres on :5433, app on :3000
+#   docker compose up -d postgres → postgres only (run the app yourself)
+#
+# First run (app container migrates automatically on start via entrypoint).
+#
+#   docker compose down           → stop (data persists in the named volume)
+#   docker compose down -v        → stop + wipe data
+#
+# The app image is built from the repo: node:20-alpine, `next build`, `next start`.
+# No AI provider key needed to boot — /api/health reports providerResolved:false
+# and the UI shows the no-provider banner until you set OPENAI_API_KEY (or run
+# Ollama) in the `environment:` block below.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: subchats
+    ports:
+      - "5433:5432"
+    volumes:
+      - subchats-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d subchats"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/subchats
+      AUTH_SECRET: local-dev-secret-change-me-in-prod
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: http://localhost:3000
+      LOG_LEVEL: info
+      # Optional: enable an AI provider for this local deployment
+      # OPENAI_API_KEY: ""
+      # ADMIN_ALLOW_OLLAMA_USERS: "false"
+    ports:
+      - "3000:3000"
+
+volumes:
+  subchats-pgdata:
