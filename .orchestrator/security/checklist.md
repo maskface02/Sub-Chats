@@ -1,6 +1,6 @@
 # Security Checklist (running tracker)
 
-**phase:** 0 + 1
+**phase:** 0 + 1 + 2
 **last_updated:** 2026-09-13
 **reviewer:** security
 
@@ -216,13 +216,64 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 
 ---
 
+## phase 2
+
+### threat modeling
+- [x] STRIDE model complete (`.orchestrator/security/threat-models/phase-2.md`) — extends phase-1 baseline
+- [x] OWASP Top 10 (2025) mapping included
+- [x] Spec hardening requests raised (8 items; #1–#6 recommended pre-build)
+- [ ] Code audit pending (`.orchestrator/security/audits/phase-2.md` — after Backend + Frontend delivery)
+- [ ] Spec hardening items resolved or accepted by Orchestrator
+
+### tree endpoint — access control (T-I-1, T-I-2, T-E-1)
+- [ ] `GET /api/chats/:id/tree` ownership enforced on `:id` via single-query check (`id` + `userId`), 404 NOT_FOUND for missing AND foreign (byte-identical, ≤50ms delta)
+- [ ] Subtree query filters BOTH `rootConversationId` AND `userId` — ownership is in SQL, not just a JS post-filter
+- [ ] Root node picked from WITHIN the `userId`-filtered rows; filtered-set miss → 404
+- [ ] Foreign descendant injected under a user's root cannot appear in the response (Vitest)
+
+### tree endpoint — DoS (T-D-1, T-D-2)
+- [ ] 500-node cap applied during in-memory DFS assembly (fetch does not load full subtree then slice)
+- [ ] `totalNodes` computed via aggregate count (`count(*)` / index-only) with the SAME `userId` filter — never `rows.length` of full fetch
+
+### split view (T-T-3, T-D-3, T-D-4)
+- [ ] Per-pane 404 (foreign/deleted secondary id) → terminal error state, no crash, no retry loop
+- [ ] One pane's failure never unmounts or errors the other pane (US-204 AC.7)
+- [ ] Message rate-limit key remains per-USER across both panes (split cannot double the per-user ceiling)
+- [ ] Tree refetch trigger fires on branch-success only (no fetch→trigger→fetch loop)
+- [ ] Per-pane SSE clients instance-scoped; closing a pane aborts only its stream
+
+### XSS surface (T-T-1, T-T-2)
+- [ ] Zero `dangerouslySetInnerHTML` in phase-2 components (TreeNode SVG labels, tooltip, picker)
+- [ ] Node titles / tooltip content / picker items rendered as React text children only
+
+### API surface
+- [ ] No new mutation endpoints (read-only phase; CSRF surface unchanged)
+- [ ] Tree payload contains ONLY `{id, title, depth, highlightText, createdAt, children}` (+ root/currentId/totalNodes/truncated envelope) — no userId, email, highlightContext
+
+### tests (audit gates)
+- [ ] Vitest: subtree query excludes foreign-owned rows even when linked under a user's root (T-I-1)
+- [ ] Vitest: foreign-owned root resolution → 404 (T-I-2)
+- [ ] Vitest: `totalNodes` = count of user's own subtree rows (T-I-3)
+- [ ] Playwright: cross-user 404 on tree endpoint (AC-P2-15)
+- [ ] Playwright: crafted foreign secondaryId → pane shows error, both panes survive
+
+### sign-off gates
+- [ ] STRIDE model approved by Orchestrator
+- [ ] Spec hardening items resolved or accepted
+- [ ] Code audit complete
+- [ ] No `high` or `critical` findings open
+- [ ] Reviewed by Critic (Muse Spark)
+- [ ] Phase 2 marked `secure` in `.orchestrator/STATE.md`
+
+---
+
 ## phase-by-phase tracker
 
 | phase | threat model | checklist | audit | sign-off |
 |---|---|---|---|---|
 | 0    | done (preliminary) | this file | pending code review | pending |
 | 1    | done (preliminary) | this file | pending code review | pending |
-| 2    | — | — | — | — |
+| 2    | done (preliminary) | this file | stub (`audits/phase-2.md`) | pending |
 | 3    | — | — | — | — |
 
 ---

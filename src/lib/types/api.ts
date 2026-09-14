@@ -171,6 +171,24 @@ export const SendMessageRequestSchema = z.object({
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
 
+// ---------- tree (phase 2) ----------
+
+export interface TreeNodeDto {
+  id: string;
+  title: string;
+  depth: number;
+  highlightText: string | null;
+  createdAt: string;
+  children: TreeNodeDto[];
+}
+
+export interface TreeResponse {
+  root: TreeNodeDto;
+  currentId: string;
+  totalNodes: number;
+  truncated: boolean;
+}
+
 // ---------- health ----------
 
 export const HealthProviderSchema = z.object({

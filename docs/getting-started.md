@@ -90,6 +90,26 @@ Open <http://localhost:3000>. You should land on the sign-in page (or on the no-
 6. Type your follow-up ("what's the best one for small teams?") and press Enter
 7. The AI responds with full ancestor context — it knows what you mean by "it"
 
+## Navigate your conversation tree
+
+Once you have at least one sub-chat, two new surfaces help you get around:
+
+**Tree-map sidebar**
+
+1. The tree sidebar sits beside the chat on desktop; on mobile, tap the **Tree** button in the header to open it as a drawer.
+2. It shows every conversation in the current tree, top-down: the root at the top, each sub-chat below its parent. Highlighted branches (📌) mark sub-chats created from a text selection.
+3. Click any node to jump to that chat — the current chat is highlighted with a bold border.
+4. The tree is read-only navigation: no drag, rename, or delete.
+5. Create another sub-chat → the tree updates automatically; no reload needed.
+
+**Split view (desktop only, ≥ 768 px)**
+
+1. Click **Split** in the header.
+2. Pick a conversation from the picker (if the current chat has a parent, the parent is preselected).
+3. Two panes appear side-by-side, each with its own messages, composer, and streaming reply.
+4. Drag the divider to resize; use the **⇅** control in the divider to stack the panes vertically instead.
+5. Close a pane with its **×** — a reload always returns you to single view (the split is not saved).
+
 ## Verifying the provider
 
 A quick smoke test for ops / DevOps without sending a chat:

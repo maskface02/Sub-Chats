@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { getChat, getHealth, listChats } from "@/lib/api-client/chats";
 import { ApiError } from "@/lib/api-client/base";
 import { AppShell } from "@/components/layout/AppShell";
-import { ChatView } from "@/components/chat/ChatView";
+import { SplitChatArea } from "@/components/split/SplitView";
 import { Button } from "@/components/ui/button";
 import type { ChatListItem, Conversation, ProviderInfo } from "@/lib/api-client/types";
 
@@ -99,8 +99,9 @@ export default async function ChatPage({ params }: PageProps) {
       chatsError={listResult.error}
       currentChatId={id}
       providerInfo={providerInfo}
+      conversation={conversation}
     >
-      <ChatView conversation={conversation} />
+      <SplitChatArea conversation={conversation} />
     </AppShell>
   );
 }

@@ -3,14 +3,15 @@
 last_updated: 2026-09-13
 
 ## phase
-current: 1
+current: 2
 status: complete
-title: "sub-chat core"
-spec: .orchestrator/specs/phase-1.md (frozen, revision 2)
+title: "tree-map visualization + split view"
+spec: .orchestrator/specs/phase-2.md (frozen, revision 2)
 
 ## phase_status
 - 0: ✅ complete (typecheck pass, 17 unit tests pass, build pass — pglite swap)
-- 1: ✅ complete (typecheck pass, 46 unit tests pass, build pass — 1 new route, 29 new tests, ancestor walk, context reconstruction, selection UI, breadcrumb, parent banner)
+- 1: ✅ complete (typecheck pass, 46 unit tests pass, build pass — sub-chat core)
+- 2: ✅ complete (typecheck pass, 53 unit tests pass, build pass — tree endpoint, tree-map sidebar, split view, UX contracts first activation)
 
 ## active_roles (phase 1)
 - PM: spec delivered (frozen rev 2 after 3 polish fixes + 3 open-question resolutions)

@@ -147,6 +147,48 @@ This is `O(d)` round-trips where `d = depth`. A batched query (`messages.listByC
 
 See `.orchestrator/specs/phase-1.md` §7 for the algorithm.
 
+## Tree data model (phase 2)
+
+Phase 2 adds read-only navigation over the tree: a tree-map sidebar and a split view. No schema change — everything rides on the phase 1 columns and indexes.
+
+### Subtree fetch via `rootConversationId`
+
+Conversations form a tree via `parentId`; every row also carries `rootConversationId` (the id of its root). This makes the whole subtree a **single indexed query** — no recursive ancestor walk:
+
+```
+SELECT id, title, depth, parentId, highlightText, createdAt
+FROM conversations
+WHERE rootConversationId = ? AND userId = ?   -- served by the (rootConversationId) index
+ORDER BY createdAt ASC
+```
+
+Rows are assembled into a tree in memory (map `parentId` → `children`). The endpoint `GET /api/chats/:id/tree` resolves the root from `:id`'s row and returns `{ root, currentId, totalNodes, truncated }`. Trees over 500 nodes are truncated in DFS pre-order (parent before children, children by `createdAt ASC`); `truncated: true` and `totalNodes` count the FULL subtree before truncation so the UI can render "Showing 500 of N". Cross-user access returns `404 NOT_FOUND` — identical body and timing to a missing id (no existence oracle); the subtree query also filters on `userId` so foreign nodes can never enter the response. API details → the `GET /api/chats/:id/tree` entry in [endpoints.md](api/endpoints.md).
+
+### Tree shape (depth 2)
+
+```
+                    ┌───┐  depth 0
+                    │ A │  root  (parentId = null, rootConversationId = A)
+                    └─┬─┘
+        ┌─────────────┴─────────────┐
+    ┌───┐                       ┌───┐  depth 1
+    │ B │  rootConversationId=A │ C │  rootConversationId=A
+    └─┬─┘  parentId=A            └───┘  parentId=A
+      │
+    ┌───┐  depth 2
+    │ D │  rootConversationId=A, parentId=B
+    └───┘
+
+GET /api/chats/:id/tree  →  root=A
+  children(B) = [D], children(A) = [B, C]   (each sorted by createdAt ASC)
+  totalNodes = 4, truncated = false
+  :id determines currentId;  a query for A, B, C or D returns the SAME tree
+```
+
+### Split view is client-state only
+
+Splitting uses `react-resizable-panels`: two panes, each an independent chat view (own composer, own SSE stream, independent errors). The split lives entirely in client state (Zustand) — the URL stays on the current conversation, the right pane's id is never persisted, and a reload returns to single view. The two panes always share one root: both are conversations within the same tree, keeping the sidebar's data coherent.
+
 ## Conversation tree (phase 0 shape)
 
 Phase 0 only ships **root** conversations — every row in `conversations` has `parentId=null`, `depth=0`, and `rootConversationId=<self>`. The schema already carries the columns phase 1 needs:

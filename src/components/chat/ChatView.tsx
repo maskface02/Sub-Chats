@@ -6,11 +6,18 @@ import { Composer } from "./Composer";
 import { SelectionMenu } from "./SelectionMenu";
 import { ParentContextBanner } from "./ParentContextBanner";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
+import { SplitPicker } from "@/components/split/SplitPicker";
+import { useSplit } from "@/lib/state/split";
 import type { Conversation, Message } from "@/lib/api-client/types";
 import { Button } from "@/components/ui/button";
 
 export interface ChatViewProps {
   conversation: Conversation;
+  /**
+   * When set, this ChatView renders inside a split-view pane (phase 2) and
+   * participates in active-pane tracking instead of owning Split entry.
+   */
+  pane?: { index: 1 | 2 };
   /**
    * Optional override: how to render breadcrumb ancestors when the API
    * does not return `parentTitle` / `rootTitle`. Caller can supply the chain
@@ -35,14 +42,17 @@ function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function ChatView({ conversation, breadcrumbOverride }: ChatViewProps) {
+export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewProps) {
+  const split = useSplit();
   const [messages, setMessages] = useState<Message[]>(conversation.messages);
   const [streaming, setStreaming] = useState<string>("");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [pickerOpen, setPickerOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamingIdRef = useRef<string>("");
   const headerRef = useRef<HTMLHeadingElement | null>(null);
+  const splitButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -238,6 +248,31 @@ export function ChatView({ conversation, breadcrumbOverride }: ChatViewProps) {
         <span className="text-xs text-muted-foreground">
           {messages.length} {messages.length === 1 ? "message" : "messages"}
         </span>
+        {!pane ? (
+          <>
+            <button
+              ref={splitButtonRef}
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              disabled={isBusy}
+              className="hidden rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:inline-flex"
+              aria-haspopup="dialog"
+            >
+              Split
+            </button>
+            <SplitPicker
+              open={pickerOpen}
+              onOpenChange={(nextOpen) => {
+                setPickerOpen(nextOpen);
+                if (!nextOpen) {
+                  requestAnimationFrame(() => splitButtonRef.current?.focus());
+                }
+              }}
+              conversation={conversation}
+              onPick={(id) => split.openSplit(conversation.id, id)}
+            />
+          </>
+        ) : null}
       </header>
 
       {isSubChat ? (
@@ -299,7 +334,7 @@ export function ChatView({ conversation, breadcrumbOverride }: ChatViewProps) {
         placeholder={composerPlaceholder}
       />
 
-      <SelectionMenu conversationId={conversation.id} />
+      <SelectionMenu conversationId={conversation.id} paneIndex={pane?.index} />
     </div>
   );
 }

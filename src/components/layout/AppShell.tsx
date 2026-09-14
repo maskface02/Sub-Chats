@@ -4,9 +4,11 @@ import { UserMenu } from "@/components/layout/UserMenu";
 import { NewChatButton } from "@/components/chat/NewChatButton";
 import { ProviderBanner } from "@/components/chat/ProviderBanner";
 import { RetryButton } from "@/components/layout/RetryButton";
+import { TreeDrawer, TreeMapSidebar } from "@/components/tree/TreeMapSidebar";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import type {
   ChatListItem,
+  Conversation,
   ProviderInfo,
   SessionUser,
 } from "@/lib/api-client/types";
@@ -18,6 +20,8 @@ export interface AppShellProps {
   currentChatId?: string | null;
   providerInfo: ProviderInfo;
   headerSlot?: ReactNode;
+  /** Current conversation, when available — powers the tree-map sidebar. */
+  conversation?: Conversation | null;
   children: ReactNode;
 }
 
@@ -28,6 +32,7 @@ export function AppShell({
   currentChatId = null,
   providerInfo,
   headerSlot,
+  conversation = null,
   children,
 }: AppShellProps) {
   return (
@@ -43,6 +48,7 @@ export function AppShell({
         </div>
         <div className="flex items-center gap-3">
           {headerSlot}
+          {conversation ? <TreeDrawer conversation={conversation} /> : null}
           <UserMenu email={user.email} name={user.name} />
         </div>
       </header>
@@ -50,6 +56,14 @@ export function AppShell({
       <ProviderBanner provider={providerInfo} />
 
       <div className="flex flex-1 overflow-hidden">
+        {conversation ? (
+          <div
+            className="hidden w-[260px] shrink-0 border-r md:block"
+            aria-label="Conversation tree"
+          >
+            <TreeMapSidebar conversation={conversation} variant="panel" />
+          </div>
+        ) : null}
         <aside
           aria-label="Conversations"
           className="hidden w-72 shrink-0 border-r bg-muted/20 md:flex md:flex-col"

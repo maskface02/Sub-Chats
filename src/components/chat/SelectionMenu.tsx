@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createBranch } from "@/lib/api-client/branches";
+import { invalidateTree } from "@/components/tree/useConversationTree";
 import { ApiError } from "@/lib/api-client/base";
 
 const PILL_VERTICAL_GAP = 8;
@@ -42,11 +43,18 @@ export interface SelectionMenuProps {
    * list and rely on `data-no-branch` attributes to suppress it where needed.
    */
   enabled?: boolean;
+  /**
+   * Split-view pane this instance belongs to. When set, selections only
+   * register if they fall inside that pane's DOM subtree, keeping multiple
+   * simultaneous instances isolated (US-205 AC.5).
+   */
+  paneIndex?: 1 | 2;
 }
 
 export function SelectionMenu({
   conversationId,
   enabled = true,
+  paneIndex,
 }: SelectionMenuProps) {
   const router = useRouter();
   const [pill, setPill] = useState<PillState>({ kind: "hidden" });
@@ -106,7 +114,7 @@ export function SelectionMenu({
     }
     debounceTimerRef.current = setTimeout(() => {
       debounceTimerRef.current = null;
-      handleSelectionDetected(detectSelection());
+      handleSelectionDetected(detectSelection(paneIndex));
     }, SELECTION_DEBOUNCE_MS);
   }, [enabled, handleSelectionDetected]);
 
@@ -159,7 +167,7 @@ export function SelectionMenu({
       if (role !== "assistant") return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-      const detected = detectSelection();
+      const detected = detectSelection(paneIndex);
       if (!detected || detected.messageRole !== "assistant") return;
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, selection: detected });
@@ -211,6 +219,7 @@ export function SelectionMenu({
     };
   }, [
     enabled,
+    paneIndex,
     scheduleDetection,
     refreshPillPosition,
     clearAll,
@@ -224,6 +233,14 @@ export function SelectionMenu({
       }
     };
   }, []);
+
+  // Selection must originate inside THIS instance's pane when a paneIndex
+  // is given (two panes each run their own SelectionMenu instance).
+  const inScopedPane = useCallback((bubble: HTMLElement): boolean => {
+    if (paneIndex == null) return true;
+    const scope = document.querySelector(`[data-chat-pane="${paneIndex}"]`);
+    return !!scope && scope.contains(bubble);
+  }, [paneIndex]);
 
   const startBranch = useCallback(
     async (selection: DetectedSelection) => {
@@ -243,6 +260,8 @@ export function SelectionMenu({
           charEnd: selection.charEnd,
           clientHighlightContext: highlightContext,
         });
+        // A new sub-chat appeared in the tree map — refetch (US-202 AC.3).
+        invalidateTree();
         router.push(`/c/${encodeURIComponent(result.id)}`);
       } catch (err) {
         const message =
@@ -415,7 +434,7 @@ export function SelectionMenu({
   );
 }
 
-function detectSelection(): DetectedSelection | null {
+function detectSelection(paneIndex?: 1 | 2): DetectedSelection | null {
   if (typeof window === "undefined") return null;
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
@@ -439,6 +458,10 @@ function detectSelection(): DetectedSelection | null {
   );
   if (!anchorBubble || !focusBubble) return null;
   if (anchorBubble !== focusBubble) return null;
+  if (paneIndex != null) {
+    const scope = document.querySelector(`[data-chat-pane="${paneIndex}"]`);
+    if (!scope || !scope.contains(anchorBubble)) return null;
+  }
   // Suppress in user messages and the banner preview
   if (anchorBubble.dataset.messageRole !== "assistant") return null;
   if (anchorBubble.dataset.noBranch === "true") return null;

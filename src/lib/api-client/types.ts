@@ -73,6 +73,22 @@ export interface CreateChatResponse {
   createdAt: string;
 }
 
+export interface TreeNodeDto {
+  id: string;
+  title: string;
+  depth: number;
+  highlightText: string | null;
+  createdAt: string;
+  children: TreeNodeDto[];
+}
+
+export interface TreeResponse {
+  root: TreeNodeDto;
+  currentId: string;
+  totalNodes: number;
+  truncated: boolean;
+}
+
 export type ProviderType = "openai" | "ollama" | null;
 
 export interface ProviderInfo {

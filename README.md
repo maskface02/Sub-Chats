@@ -16,6 +16,8 @@ Phase 0 includes:
 - **Provider fallback chain** — OpenAI if `OPENAI_API_KEY` is set, otherwise Ollama if it is running locally. If neither is available the UI shows a clear banner.
 - **Conversation list** — your recent chats on the home page, ordered by recency.
 - **Secure by default** — cross-user access returns 404 (not 403) to prevent ID enumeration. Sign-in rate limited to 5 attempts per 15 minutes per IP.
+- **Tree-map sidebar** — see and navigate your whole conversation tree.
+- **Split view** — read two chats side-by-side.
 
 What is **not** yet shipped: tree visualisation, split view, multi-provider picker, attachments, search, custom system prompts. See the [roadmap](#roadmap).
 
@@ -29,6 +31,14 @@ Sub-chats let you branch any AI conversation by highlighting text:
 4. Ask your follow-up — the AI knows what you're asking about
 
 Sub-chats can themselves spawn sub-chats. Navigate via the breadcrumb at the top.
+
+## Navigation
+
+Three ways to move between conversations:
+
+- **Breadcrumb** (top of the chat) — jump to any ancestor.
+- **Tree-map sidebar** — the full conversation tree of the current root; click any node to jump there (hamburger button on mobile).
+- **Split view** — "Split" in the header opens a second conversation side-by-side.
 
 ## Screenshots
 
@@ -82,7 +92,8 @@ Detailed write-up → [docs/architecture.md](docs/architecture.md).
 - **[@assistant-ui/react](https://www.assistant-ui.com)** — chat surface (composer + message list)
 - **[shadcn/ui](https://ui.shadcn.com)** — accessible primitives built on Radix
 - **[TanStack Query](https://tanstack.com/query)** — client cache for the chat list
-- **[react-d3-tree](https://github.com/bkrem/react-d3-tree)** — tree view (used in phase 1)
+- **[@visx/hierarchy](https://airbnb.io/visx/hierarchy)** — conversation-tree visualisation (tree-map sidebar, phase 2)
+- **[react-resizable-panels](https://github.com/bvaughn/react-resizable-panels)** — split-view panes with a draggable divider (phase 2)
 - **[bcrypt](https://www.npmjs.com/package/bcrypt)** — password hashing (cost 12)
 - **[Zod](https://zod.dev)** — request validation
 
@@ -106,7 +117,7 @@ Detailed write-up → [docs/architecture.md](docs/architecture.md).
 Phase 0 is **shipped** when the [definition of done](.orchestrator/specs/phase-0.md#11-definition-of-done) is met. Subsequent phases:
 
 - **Phase 1** — sub-chat creation (highlight any assistant text → branch into a sub-chat). DB schema already reserves the columns.
-- **Phase 2** — tree-map sidebar (react-d3-tree), split view, message regenerate.
+- **Phase 2** — tree-map sidebar + split view (shipped; regenerated messages deferred to phase 3).
 - **Phase 3** — multi-provider picker UI, BYOK (encrypted per-user keys), conversation rename/delete, search.
 - **Phase 4** — attachments, tool use / function calling, MFA.
 
@@ -130,5 +141,5 @@ This project stands on the shoulders of:
 - [assistant-ui](https://www.assistant-ui.com) — chat surface components
 - [shadcn/ui](https://ui.shadcn.com) — accessible component primitives
 - [Drizzle ORM](https://orm.drizzle.team) — typed database access
-- [react-d3-tree](https://github.com/bkrem/react-d3-tree) — the tree visualisation we plan to use in phase 1
+- [@visx/hierarchy](https://airbnb.io/visx/hierarchy) — the tree visualisation in the phase 2 sidebar
 - [Ollama](https://ollama.com) — local LLM runner used as the offline fallback provider

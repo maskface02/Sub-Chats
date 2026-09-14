@@ -160,7 +160,7 @@ Persist a user message and stream the assistant reply as SSE.
 |---|---|---|---|
 | session + owner | `{ content, clientMessageId? }` | `200` SSE stream (AI SDK v4 protocol) | `401`, `404`, `422 INVALID_INPUT`, `502 PROVIDER_FAILED`, `503 NO_PROVIDER`, `503 ANCESTOR_UNAVAILABLE` (sub-chat only) |
 
-**Phase 1 addition:** when `depth ≥ 1`, the server runs the **ancestor-walk algorithm** (see [architecture.md](architecture.md#sub-chat-tree-model)) and prepends a system note explaining the sub-chat context. The user's message is still persisted only on the sub-chat — ancestors are read but never modified.
+**Phase 1 addition:** when `depth ≥ 1`, the server runs the **ancestor-walk algorithm** (see [architecture.md](../architecture.md#sub-chat-tree-model)) and prepends a system note explaining the sub-chat context. The user's message is still persisted only on the sub-chat — ancestors are read but never modified.
 
 On the first message of a conversation whose title is still `"New chat"`, the title auto-derives from the first 6 words of the user content (phase 1 closes phase 0 §10 Q1).
 
@@ -232,6 +232,71 @@ curl -X POST http://localhost:3000/api/chats/<sourceId>/branch \
   }'
 ```
 
+### `GET /api/chats/:id/tree` *(phase 2, new)*
+
+Return the full conversation subtree rooted at `:id`'s **root** in one response — the data source for the tree-map sidebar and the split-view picker.
+
+| Auth | Path | Success | Errors |
+|---|---|---|---|
+| session + owner of `:id` | `id` (uuid) | `200 TreeResponse` | `401 UNAUTHENTICATED`, `404 NOT_FOUND` (missing OR cross-user — indistinguishable), `500 INTERNAL` |
+
+Ownership check is on the `:id` row; a subtree query additionally filters on `userId` (defense-in-depth). A query for any node in a tree returns the same subtree, with `currentId` set to the requested `:id`.
+
+`TreeNodeDto` (recursive):
+
+```ts
+{
+  id: string;
+  title: string;
+  depth: number;               // relative to root: root = 0
+  highlightText: string | null; // always present in JSON, null when no highlight
+  createdAt: string;            // ISO timestamp; used by the sidebar hover tooltip
+  children: TreeNodeDto[];      // ordered by createdAt ASC
+}
+```
+
+`TreeResponse`:
+
+```ts
+{
+  root: TreeNodeDto;      // the root conversation of :id's tree
+  currentId: string;      // == :id
+  totalNodes: number;     // count of the FULL subtree BEFORE truncation
+  truncated: boolean;
+}
+```
+
+If the subtree exceeds 500 nodes, the response keeps the first 500 in DFS pre-order (parent before children, children in `createdAt ASC` order), sets `truncated: true`, and omits nodes beyond the cap entirely (no childless partial subtrees). Resolved with a single indexed query on `(rootConversationId, userId)` — no N+1.
+
+```bash
+curl http://localhost:3000/api/chats/<id>/tree -b cookies.txt
+```
+
+```json
+{
+  "root": {
+    "id": "uuid-root",
+    "title": "How to build a RAG system",
+    "depth": 0,
+    "highlightText": null,
+    "createdAt": "2026-09-13T10:00:00Z",
+    "children": [
+      {
+        "id": "uuid-sub",
+        "title": "Ask about vector database",
+        "depth": 1,
+        "highlightText": "vector database",
+        "createdAt": "2026-09-13T10:05:00Z",
+        "children": []
+      }
+    ]
+  },
+  "currentId": "uuid-sub",
+  "totalNodes": 2,
+  "truncated": false
+}
+```
+
 ## Health
 
 ### `GET /api/health`
@@ -256,7 +321,9 @@ curl http://localhost:3000/api/health
 
 ## See also
 
-- Architecture → [architecture.md](architecture.md)
-- Local setup → [getting-started.md](getting-started.md)
+- Architecture → [architecture.md](../architecture.md)
+- Local setup → [getting-started.md](../getting-started.md)
 - Phase 1 spec → `.orchestrator/specs/phase-1.md`
+- Phase 2 spec → `.orchestrator/specs/phase-2.md`
+- Phase 2 handoff → `.orchestrator/handoffs/tech-writer-phase-2.md`
 - Phase 0 API handoff → `.orchestrator/handoffs/api-phase-0.md`
