@@ -19,6 +19,7 @@ import { showToast } from "./toast";
 import type { EditSaveResult } from "./EditMessage";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { useSplit } from "@/lib/state/split";
+import { takePendingQuestion } from "@/lib/state/pending-question";
 import { invalidateTree } from "@/components/tree/useConversationTree";
 import { createChatAction } from "@/lib/api-client/auth";
 import { editMessage, regenerateMessage } from "@/lib/api-client/messages";
@@ -283,6 +284,17 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  // Question-dialog hand-off: a sub-chat created via the selection dialog
+  // carries its question here; consume-once (get+clear) auto-sends it through
+  // the normal streaming path on first mount.
+  const pendingQuestionRef = useRef(false);
+  useEffect(() => {
+    if (pendingQuestionRef.current) return;
+    pendingQuestionRef.current = true;
+    const question = takePendingQuestion(conversation.id);
+    if (question) void send(question);
+  }, [conversation.id, send]);
 
   // US-407: save truncates the local tail immediately, then the SSE response
   // replaces it. Resolves at stream start so the edit UI closes; pre-stream

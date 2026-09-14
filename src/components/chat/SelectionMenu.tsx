@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createBranch } from "@/lib/api-client/branches";
+import {
+  setPendingQuestion,
+} from "@/lib/state/pending-question";
 import { invalidateTree } from "@/components/tree/useConversationTree";
 import { ApiError } from "@/lib/api-client/base";
 
@@ -34,6 +37,11 @@ type PillState =
   | { kind: "loading" }
   | { kind: "error"; message: string };
 
+/** Post-ship UX change: creation is gated behind a question dialog. */
+interface QuestionDialogState {
+  selection: DetectedSelection;
+}
+
 export interface SelectionMenuProps {
   conversationId: string;
   /**
@@ -59,6 +67,9 @@ export function SelectionMenu({
   const router = useRouter();
   const [pill, setPill] = useState<PillState>({ kind: "hidden" });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [questionDialog, setQuestionDialog] = useState<QuestionDialogState | null>(
+    null,
+  );
   const [position, setPosition] = useState<{
     top: number;
     left: number;
@@ -242,10 +253,22 @@ export function SelectionMenu({
     return !!scope && scope.contains(bubble);
   }, [paneIndex]);
 
-  const startBranch = useCallback(
-    async (selection: DetectedSelection) => {
+  /**
+   * Post-ship UX change: the pill and the right-click menu no longer create
+   * a sub-chat directly. Both open the question dialog; the sub-chat is
+   * created only when the user submits a question (Enter), and it opens
+   * with that question already sent (full parent context via the ancestor
+   * walk).
+   */
+  const openQuestionDialog = useCallback((selection: DetectedSelection) => {
+    setContextMenu(null);
+    setQuestionDialog({ selection });
+  }, []);
+
+  const createSubChatWithQuestion = useCallback(
+    async (selection: DetectedSelection, question: string) => {
+      setQuestionDialog(null);
       setPill({ kind: "loading" });
-      setContextMenu(null);
       const highlightContext = buildHighlightContext(
         selection.sourceContent,
         selection.charStart,
@@ -260,6 +283,9 @@ export function SelectionMenu({
           charEnd: selection.charEnd,
           clientHighlightContext: highlightContext,
         });
+        // The question rides ahead of navigation; ChatView consumes it on
+        // mount and auto-sends through the normal streaming path.
+        setPendingQuestion(result.id, question);
         // A new sub-chat appeared in the tree map — refetch (US-202 AC.3).
         invalidateTree();
         router.push(`/c/${encodeURIComponent(result.id)}`);
@@ -292,8 +318,8 @@ export function SelectionMenu({
   const onPillClick = useCallback(() => {
     const sel = latestSelectionRef.current;
     if (!sel) return;
-    void startBranch(sel);
-  }, [startBranch]);
+    openQuestionDialog(sel);
+  }, [openQuestionDialog]);
 
   const onPillKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -301,13 +327,13 @@ export function SelectionMenu({
         e.preventDefault();
         const sel = latestSelectionRef.current;
         if (!sel) return;
-        void startBranch(sel);
+        openQuestionDialog(sel);
       } else if (e.key === "Escape") {
         e.preventDefault();
         clearAll();
       }
     },
-    [startBranch, clearAll],
+    [openQuestionDialog, clearAll],
   );
 
   const onMenuAction = useCallback(
@@ -325,11 +351,11 @@ export function SelectionMenu({
         setContextMenu(null);
         return;
       }
-      void startBranch(cm.selection);
+      void openQuestionDialog(cm.selection);
     },
-    [contextMenu, startBranch],
-  );
 
+    [contextMenu, openQuestionDialog],
+  );
   const onMenuKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key === "Escape") {
@@ -430,7 +456,154 @@ export function SelectionMenu({
           </div>
         </div>
       ) : null}
+
+      {questionDialog ? (
+        <SubChatQuestionDialog
+          selection={questionDialog.selection}
+          pending={pill.kind === "loading"}
+          onSubmit={(question) =>
+            void createSubChatWithQuestion(questionDialog.selection, question)
+          }
+          onCancel={() => setQuestionDialog(null)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Minimal question dialog shown BEFORE a sub-chat is created (post-ship UX
+ * change): select → right-click/pill → type the question → Enter creates
+ * the sub-chat and opens it with the question already sent.
+ */
+function SubChatQuestionDialog({
+  selection,
+  pending,
+  onSubmit,
+  onCancel,
+}: {
+  selection: DetectedSelection;
+  pending: boolean;
+  onSubmit: (question: string) => void;
+  onCancel: () => void;
+}) {
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [onCancel]);
+
+  // Minimal focus trap (Tab cycles inside the dialog).
+  const onTrapKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
+      "textarea, button",
+    );
+    if (!focusables || focusables.length === 0) return;
+    const first = focusables[0]!;
+    const last = focusables[focusables.length - 1]!;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  const submit = () => {
+    const value = inputRef.current?.value.trim() ?? "";
+    if (!value || pending) return;
+    onSubmit(value);
+  };
+
+  const preview =
+    selection.text.length > 120
+      ? `${selection.text.slice(0, 119)}…`
+      : selection.text;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-black/40"
+        onClick={pending ? undefined : onCancel}
+      />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="New sub-chat question"
+        onKeyDown={onTrapKeyDown}
+        className="relative w-full max-w-md rounded-lg border bg-popover p-4 text-popover-foreground shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95"
+      >
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          New sub-chat about
+        </p>
+        <p className="mb-3 line-clamp-2 rounded bg-muted px-2 py-1.5 text-sm italic text-muted-foreground">
+          “{preview}”
+        </p>
+        <textarea
+          ref={inputRef}
+          rows={3}
+          disabled={pending}
+          aria-label="Your question for the sub-chat"
+          placeholder="What do you want to ask about this?"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        />
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={pending}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending}
+            aria-busy={pending}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
+            {pending ? (
+              <>
+                <Spinner />
+                <span>Creating sub-chat…</span>
+              </>
+            ) : (
+              <span>Ask in sub-chat</span>
+            )}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Enter to open the sub-chat · Shift+Enter for a new line · Esc to cancel
+        </p>
+      </div>
+    </div>
   );
 }
 
