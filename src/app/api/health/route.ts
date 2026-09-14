@@ -1,11 +1,13 @@
+import { auth } from "@/lib/auth";
 import { jsonRaw } from "@/lib/types/api";
-import { getActiveProvider, isOllamaReachable } from "@/lib/ai/provider";
+import { getActiveProviderFor, isOllamaReachable } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const provider = await getActiveProvider();
+  const session = await auth();
+  const provider = await getActiveProviderFor(session?.user?.id ?? null);
   const ollamaReachable = await isOllamaReachable();
 
   return jsonRaw(
@@ -16,8 +18,9 @@ export async function GET() {
             type: provider.type,
             model: provider.modelId,
             baseUrl: provider.baseUrl ?? null,
+            source: provider.source,
           }
-        : { type: null, model: null, baseUrl: null },
+        : { type: null, model: null, baseUrl: null, source: null },
       ollamaReachable,
     },
     200,

@@ -53,7 +53,7 @@ describe("ai/provider resolution", () => {
     expect(p).not.toBeNull();
     expect(p!.type).toBe("openai");
     expect(p!.modelId).toBe("gpt-4o-mini");
-    expect(p!.id).toBe("openai");
+    expect(p!.id).toBe("env:openai");
   });
 
   it("resolves ollama when OPENAI_API_KEY is absent and ollama reachable", async () => {
@@ -69,7 +69,7 @@ describe("ai/provider resolution", () => {
     expect(p).not.toBeNull();
     expect(p!.type).toBe("ollama");
     expect(p!.modelId).toBe("llama3.2:latest");
-    expect(p!.id).toBe("ollama:llama3.2:latest");
+    expect(p!.id).toBe("env:ollama");
     expect(p!.baseUrl).toBe("http://localhost:11434/v1");
   });
 

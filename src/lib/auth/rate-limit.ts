@@ -9,6 +9,9 @@ const MESSAGE_HOUR_WINDOW_MS = 60 * 60 * 1000;
 const BRANCH_WINDOW_MS = 10 * 60 * 1000;
 const BRANCH_MAX_ATTEMPTS = 30;
 
+const PROVIDER_WINDOW_MS = 10 * 60 * 1000;
+const PROVIDER_MAX_ATTEMPTS = 30;
+
 type Bucket = {
   attempts: number;
   windowStart: number;
@@ -23,6 +26,7 @@ const globalForRl = globalThis as unknown as {
   __rateLimitBuckets?: Map<string, Bucket>;
   __messageRateLimitBuckets?: Map<string, DualBucket>;
   __branchRateLimitBuckets?: Map<string, Bucket>;
+  __providerRateLimitBuckets?: Map<string, Bucket>;
 };
 
 const buckets: Map<string, Bucket> =
@@ -36,6 +40,10 @@ globalForRl.__messageRateLimitBuckets = messageBuckets;
 const branchBuckets: Map<string, Bucket> =
   globalForRl.__branchRateLimitBuckets ?? new Map<string, Bucket>();
 globalForRl.__branchRateLimitBuckets = branchBuckets;
+
+const providerBuckets: Map<string, Bucket> =
+  globalForRl.__providerRateLimitBuckets ?? new Map<string, Bucket>();
+globalForRl.__providerRateLimitBuckets = providerBuckets;
 
 export function checkRateLimit(ip: string): {
   allowed: boolean;
@@ -139,8 +147,42 @@ export function resetBranchRateLimit(userId: string): void {
   branchBuckets.delete(userId);
 }
 
+export function checkProviderRateLimit(userId: string): {
+  allowed: boolean;
+  retryAfterMs: number;
+  remaining: number;
+} {
+  const now = Date.now();
+  const existing = providerBuckets.get(userId);
+
+  if (!existing || now - existing.windowStart >= PROVIDER_WINDOW_MS) {
+    providerBuckets.set(userId, { attempts: 1, windowStart: now });
+    return { allowed: true, retryAfterMs: 0, remaining: PROVIDER_MAX_ATTEMPTS - 1 };
+  }
+
+  if (existing.attempts >= PROVIDER_MAX_ATTEMPTS) {
+    return {
+      allowed: false,
+      retryAfterMs: Math.max(0, PROVIDER_WINDOW_MS - (now - existing.windowStart)),
+      remaining: 0,
+    };
+  }
+
+  existing.attempts += 1;
+  return {
+    allowed: true,
+    retryAfterMs: 0,
+    remaining: PROVIDER_MAX_ATTEMPTS - existing.attempts,
+  };
+}
+
+export function resetProviderRateLimit(userId: string): void {
+  providerBuckets.delete(userId);
+}
+
 export const rateLimitConfig = {
   signin: { windowMs: SIGNIN_WINDOW_MS, maxAttempts: SIGNIN_MAX_ATTEMPTS },
   messages: { perMinute: MESSAGES_PER_MINUTE, perHour: MESSAGES_PER_HOUR },
   branch: { windowMs: BRANCH_WINDOW_MS, maxAttempts: BRANCH_MAX_ATTEMPTS },
+  providers: { windowMs: PROVIDER_WINDOW_MS, maxAttempts: PROVIDER_MAX_ATTEMPTS },
 } as const;

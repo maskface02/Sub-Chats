@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition, useState } from "react";
+import Link from "next/link";
 import { signOutAction } from "@/lib/api-client/auth";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +35,12 @@ export function UserMenu({ email, name }: UserMenuProps) {
         ) : null}
         <div className="text-muted-foreground">{email}</div>
       </div>
+      <Link
+        href="/settings/providers"
+        className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+      >
+        Settings
+      </Link>
       <Button
         type="button"
         variant="outline"

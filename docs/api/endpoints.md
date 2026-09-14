@@ -297,6 +297,89 @@ curl http://localhost:3000/api/chats/<id>/tree -b cookies.txt
 }
 ```
 
+## Provider endpoints *(phase 3, new)*
+
+> **Masked-key policy (normative):** no endpoint ever returns a provider's API key or ciphertext. The only key-visible field is `apiKeyHint` — the string `"…"` + the last 4 characters of the key (e.g. `"…abc1"`), or `null` when no key is stored (or the stored ciphertext no longer decrypts). Keys are encrypted at rest (AES-256-GCM, `v1:<iv>:<ciphertext>`).
+
+### `GET /api/providers`
+
+List the current user's provider rows (≤ 10 max).
+
+| Auth | Success | Errors |
+|---|---|---|
+| session | `200 { items: ProviderItem[] }` | `401 UNAUTHENTICATED`, `500 INTERNAL` |
+
+Not rate-limited. `ProviderItem`:
+
+```ts
+{
+  id: string;
+  type: "openai" | "anthropic" | "ollama" | "custom";
+  baseUrl: string | null;
+  defaultModel: string | null;
+  isDefault: boolean;
+  apiKeyHint: string | null;   // "…abc1" or null — never the key itself
+  createdAt: string;           // ISO timestamp
+}
+```
+
+```bash
+curl http://localhost:3000/api/providers -b cookies.txt
+```
+
+### `POST /api/providers`
+
+Add a provider. Field rules per type: `openai`/`anthropic` require `apiKey` and reject `baseUrl`; `ollama` requires `baseUrl` and rejects `apiKey`; `custom` requires `baseUrl`, `apiKey` optional.
+
+| Auth | Body | Success | Errors |
+|---|---|---|---|
+| session | `{ type, baseUrl?, apiKey?, defaultModel?, isDefault? }` (zod `.strict()`) | `201 ProviderItem` (masked) | `401`, `422 INVALID_INPUT` (with `fields`), `422 PROVIDER_LIMIT`, `429 RATE_LIMITED`, `500 INTERNAL` |
+
+Rules:
+
+- **Limit:** 10 providers per user — an 11th create → `422 { error: { code: "PROVIDER_LIMIT", message: "You can store up to 10 providers" } }`.
+- **Default:** your **first** provider is automatically the default; after that, `isDefault: true` clears the previous default (server transaction — exactly one default per user).
+- **Model default:** omitted `defaultModel` applies the type default (`gpt-4o-mini`, `claude-3-5-haiku-latest`; `ollama`/`custom` require it).
+- **SSRF guard:** user-supplied `baseUrl` must be `http`/`https`; `custom` baseUrls pointing at loopback/private/link-local IPs are rejected → `422 { fields: { baseUrl: "baseUrl must not point to a private address" } }`. The `ollama` type is exempt (local Ollama is its purpose).
+- **Rate limit:** 30 mutation requests / 10 min / user (combined POST/PUT/DELETE) → `429 RATE_LIMITED` with `Retry-After` and `X-RateLimit-*` headers.
+
+```bash
+curl -X POST http://localhost:3000/api/providers \
+  -H 'content-type: application/json' \
+  -b cookies.txt \
+  -d '{"type":"anthropic","apiKey":"sk-ant-api03-...","defaultModel":"claude-3-5-haiku-latest","isDefault":true}'
+```
+
+### `PUT /api/providers/:id`
+
+Edit a provider. Accepts any subset of `{ baseUrl, apiKey, defaultModel, isDefault }` (`.strict()`); `type` is immutable (attempting to change it → `422 INVALID_INPUT`).
+
+| Auth | Body | Success | Errors |
+|---|---|---|---|
+| session + owner | any subset of `{ baseUrl, apiKey, defaultModel, isDefault }` | `200 ProviderItem` (masked, updated) | `401`, `404 NOT_FOUND`, `422 INVALID_INPUT`, `429 RATE_LIMITED`, `500 INTERNAL` |
+
+- A supplied `apiKey` re-encrypts and replaces the stored ciphertext (`apiKeyHint` updates); an omitted `apiKey` leaves the existing key untouched. There is no "read back the key" — see the masked-key policy above.
+- `404 NOT_FOUND` is returned byte-identically for a missing id and a foreign-owned row.
+
+```bash
+curl -X PUT http://localhost:3000/api/providers/<id> \
+  -H 'content-type: application/json' \
+  -b cookies.txt \
+  -d '{"isDefault":true,"defaultModel":"claude-sonnet-4-20250514"}'
+```
+
+### `DELETE /api/providers/:id`
+
+| Auth | Success | Errors |
+|---|---|---|
+| session + owner | `204` (no body) | `401`, `404 NOT_FOUND`, `429 RATE_LIMITED`, `500 INTERNAL` |
+
+Deleting your default provider does **not** promote another row — chat resolution falls back to the server env chain (see the [resolution docs](../architecture.md#provider-resolution-phase-3)).
+
+```bash
+curl -X DELETE http://localhost:3000/api/providers/<id> -b cookies.txt
+```
+
 ## Health
 
 ### `GET /api/health`
@@ -310,7 +393,13 @@ Provider status for ops, DevOps, and the "no AI provider configured" banner.
 ```ts
 {
   status: "ok";
-  provider: { type: "openai" | "ollama" | null, model: string | null, baseUrl: string | null };
+  provider: {
+    type: "openai" | "anthropic" | "ollama" | null,
+    model: string | null,
+    baseUrl: string | null,
+    // phase 3: resolution for the CURRENT session's user (null when unauthenticated)
+    source: "user" | "env" | null,
+  };
   ollamaReachable: boolean;
 }
 ```
@@ -325,5 +414,6 @@ curl http://localhost:3000/api/health
 - Local setup → [getting-started.md](../getting-started.md)
 - Phase 1 spec → `.orchestrator/specs/phase-1.md`
 - Phase 2 spec → `.orchestrator/specs/phase-2.md`
+- Phase 3 spec → `.orchestrator/specs/phase-3.md`
 - Phase 2 handoff → `.orchestrator/handoffs/tech-writer-phase-2.md`
 - Phase 0 API handoff → `.orchestrator/handoffs/api-phase-0.md`

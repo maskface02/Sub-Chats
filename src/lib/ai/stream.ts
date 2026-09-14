@@ -3,7 +3,7 @@ import { streamText, type CoreMessage } from "ai";
 import { eq, asc, and, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { getActiveProvider } from "./provider";
+import { getActiveProviderFor, SsrfBlockedError } from "./provider";
 import { log } from "@/lib/log";
 
 const globalForInFlight = globalThis as unknown as {
@@ -401,7 +401,28 @@ export async function streamChatResponse(
     };
   }
 
-  const provider = await getActiveProvider();
+  let provider: Awaited<ReturnType<typeof getActiveProviderFor>>;
+  try {
+    provider = await getActiveProviderFor(userId);
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) {
+      log.warn(
+        { err, conversationId, userId },
+        "provider blocked by SSRF guard at send time",
+      );
+      return {
+        ok: false,
+        status: 502,
+        body: {
+          error: {
+            code: "PROVIDER_FAILED",
+            message: "Provider endpoint blocked — update it in provider settings",
+          },
+        },
+      };
+    }
+    throw err;
+  }
   if (!provider) {
     return {
       ok: false,

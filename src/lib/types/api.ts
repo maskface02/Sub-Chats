@@ -11,6 +11,7 @@ export const ERROR_CODES = [
   "PROVIDER_FAILED",
   "INVALID_SELECTION",
   "ANCESTOR_UNAVAILABLE",
+  "PROVIDER_LIMIT",
   "INTERNAL",
 ] as const;
 
@@ -189,12 +190,124 @@ export interface TreeResponse {
   truncated: boolean;
 }
 
+// ---------- providers (phase 3) ----------
+
+export const PROVIDER_TYPES = [
+  "openai",
+  "anthropic",
+  "ollama",
+  "custom",
+] as const;
+
+export type ProviderTypeDto = (typeof PROVIDER_TYPES)[number];
+
+export const ProviderDtoSchema = z.object({
+  id: z.string(),
+  type: z.enum(PROVIDER_TYPES),
+  baseUrl: z.string().nullable(),
+  defaultModel: z.string().nullable(),
+  isDefault: z.boolean(),
+  apiKeyHint: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type ProviderDto = z.infer<typeof ProviderDtoSchema>;
+
+export const ProviderListResponseSchema = z.object({
+  items: z.array(ProviderDtoSchema),
+});
+
+export type ProviderListResponse = z.infer<typeof ProviderListResponseSchema>;
+
+const providerBaseUrlSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (v) => {
+      try {
+        const u = new URL(v);
+        return u.protocol === "http:" || u.protocol === "https:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "baseUrl must be a valid http(s) URL" },
+  );
+
+const providerApiKeySchema = z.string().min(1).max(4096);
+const providerDefaultModelSchema = z.string().min(1).max(200);
+
+export const CreateProviderRequestSchema = z
+  .object({
+    type: z.enum(PROVIDER_TYPES),
+    baseUrl: providerBaseUrlSchema.optional(),
+    apiKey: providerApiKeySchema.optional(),
+    defaultModel: providerDefaultModelSchema.optional(),
+    isDefault: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.type === "openai" || data.type === "anthropic") {
+      if (!data.apiKey) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apiKey"],
+          message: `apiKey is required for type ${data.type}`,
+        });
+      }
+      if (data.baseUrl !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["baseUrl"],
+          message: `baseUrl is not allowed for type ${data.type}`,
+        });
+      }
+    }
+    if (data.type === "ollama") {
+      if (!data.baseUrl) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["baseUrl"],
+          message: "baseUrl is required for type ollama",
+        });
+      }
+      if (data.apiKey !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apiKey"],
+          message: "apiKey is not allowed for type ollama",
+        });
+      }
+    }
+    if (data.type === "custom" && !data.baseUrl) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message: "baseUrl is required for type custom",
+      });
+    }
+  });
+
+export type CreateProviderRequest = z.infer<typeof CreateProviderRequestSchema>;
+
+export const UpdateProviderRequestSchema = z
+  .object({
+    baseUrl: providerBaseUrlSchema.optional(),
+    apiKey: providerApiKeySchema.optional(),
+    defaultModel: providerDefaultModelSchema.optional(),
+    isDefault: z.boolean().optional(),
+  })
+  .strict();
+
+export type UpdateProviderRequest = z.infer<typeof UpdateProviderRequestSchema>;
+
 // ---------- health ----------
 
 export const HealthProviderSchema = z.object({
-  type: z.enum(["openai", "ollama"]).nullable(),
+  type: z.enum(["openai", "anthropic", "ollama", "custom"]).nullable(),
   model: z.string().nullable(),
   baseUrl: z.string().nullable(),
+  source: z.enum(["user", "env"]).nullable(),
 });
 
 export type HealthProvider = z.infer<typeof HealthProviderSchema>;

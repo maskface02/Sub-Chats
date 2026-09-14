@@ -103,6 +103,37 @@ export interface HealthResponse {
   ollamaReachable: boolean;
 }
 
+export type ProviderTypeDto = "openai" | "anthropic" | "ollama" | "custom";
+
+export interface ProviderDto {
+  id: string;
+  type: ProviderTypeDto;
+  baseUrl: string | null;
+  defaultModel: string | null;
+  isDefault: boolean;
+  apiKeyHint: string | null;
+  createdAt: string;
+}
+
+export interface ProvidersResponse {
+  items: ProviderDto[];
+}
+
+export interface ProviderCreateBody {
+  type: ProviderTypeDto;
+  baseUrl?: string;
+  apiKey?: string;
+  defaultModel?: string;
+  isDefault?: boolean;
+}
+
+export interface ProviderUpdateBody {
+  baseUrl?: string;
+  apiKey?: string;
+  defaultModel?: string;
+  isDefault?: boolean;
+}
+
 export interface ApiErrorBody {
   error: {
     code: string;

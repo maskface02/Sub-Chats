@@ -2,9 +2,9 @@
 
 > AI chat with branching conversation trees — a foundation for threaded, exploratory conversations with any model.
 
-![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-1-blue) ![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-3-blue) ![license](https://img.shields.io/badge/license-MIT-green)
 
-> Phase 1 ships the unique feature: **branching sub-chats**. It builds on the phase 0 foundation (signup, signin, streaming root chat, persistent history).
+> Phase 3 ships **bring-your-own-key providers** and **markdown rendering**. It builds on phase 0 (auth, streaming chat, history) and phases 1–2 (branching sub-chats, tree navigation, split view).
 
 ## Features
 
@@ -18,8 +18,10 @@ Phase 0 includes:
 - **Secure by default** — cross-user access returns 404 (not 403) to prevent ID enumeration. Sign-in rate limited to 5 attempts per 15 minutes per IP.
 - **Tree-map sidebar** — see and navigate your whole conversation tree.
 - **Split view** — read two chats side-by-side.
+- **Bring your own key** — OpenAI, Anthropic, Ollama, or any OpenAI-compatible endpoint — [provider docs](docs/getting-started.md#bring-your-own-key).
+- **Markdown rendering** — assistant replies render GFM tables, code blocks, and task lists safely (no raw HTML).
 
-What is **not** yet shipped: tree visualisation, split view, multi-provider picker, attachments, search, custom system prompts. See the [roadmap](#roadmap).
+What is **not** yet shipped: attachments, search, message edit/regenerate, syntax highlighting. See the [roadmap](#roadmap).
 
 ## Sub-chats (the unique feature)
 
@@ -118,8 +120,8 @@ Phase 0 is **shipped** when the [definition of done](.orchestrator/specs/phase-0
 
 - **Phase 1** — sub-chat creation (highlight any assistant text → branch into a sub-chat). DB schema already reserves the columns.
 - **Phase 2** — tree-map sidebar + split view (shipped; regenerated messages deferred to phase 3).
-- **Phase 3** — multi-provider picker UI, BYOK (encrypted per-user keys), conversation rename/delete, search.
-- **Phase 4** — attachments, tool use / function calling, MFA.
+- **Phase 3** — BYOK providers (encrypted per-user keys), Anthropic, markdown rendering (shipped).
+- **Phase 4** — syntax highlighting, attachments, tool use / function calling, MFA.
 
 Full specs → [`.orchestrator/specs/`](.orchestrator/specs/).
 

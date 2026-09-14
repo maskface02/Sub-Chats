@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "@/lib/api-client/types";
+import { Markdown } from "@/components/markdown/Markdown";
 
 export interface MessageBubbleProps {
   message: Message;
@@ -37,17 +38,24 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm shadow-sm sm:max-w-[75%]",
+          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm sm:max-w-[75%]",
           "select-text",
+          // Plain-text accumulation keeps pre-wrap; markdown blocks collapse it
+          // themselves so a rendered message must NOT preserve tags' whitespace.
+          isAssistant && !isStreaming ? "" : "whitespace-pre-wrap",
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground",
         )}
         title={new Date(message.createdAt).toLocaleString()}
       >
-        <span className={cn(isAssistant && isStreaming && "streaming-caret")}>
-          {message.content || (isAssistant && isStreaming ? "" : "")}
-        </span>
+        {isAssistant && !isStreaming ? (
+          <Markdown content={message.content} />
+        ) : (
+          <span className={cn(isAssistant && isStreaming && "streaming-caret")}>
+            {message.content || (isAssistant && isStreaming ? "" : "")}
+          </span>
+        )}
       </div>
     </article>
   );

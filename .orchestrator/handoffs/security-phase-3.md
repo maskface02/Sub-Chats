@@ -1,0 +1,35 @@
+# Handoff — Security → Backend & Frontend (Phase 3)
+
+**from:** security (GLM 5.3 Flash tier)
+**date:** 2026-09-14
+**basis:** `.orchestrator/security/threat-models/phase-3.md` (frozen spec `.orchestrator/specs/phase-3.md` rev 2; decisions `.orchestrator/decisions/phase-3-open-questions.md`)
+**sign-off:** pending code audit (`.orchestrator/security/audits/phase-3.md`)
+
+---
+
+## Top 5 risks — Backend (keys + SSRF + resolution)
+
+1. **Key handling end-to-end (T-I-1/T-I-2/T-I-3/T-T-3/T-T-4 — high).** The invariant: plaintext key and full ciphertext appear in NO response, NO log line, NO error message, NO RSC payload, NO URL. Concretely: (a) use ONE shared whitelist serializer (`{id, type, baseUrl, defaultModel, isDefault, apiKeyHint, createdAt}`) on every provider route — never pass the Drizzle row through; (b) decrypt failure paths log `providerId` + error class ONLY — the redact list is pattern-based and cannot catch an ad-hoc `{ciphertext}` field, and raw GCM throw strings can embed either blob or key; (c) `setAuthTag` + `final()` on every decrypt, any failure THROWS (callers skip-and-fall-back, never recover a value); (d) IV = `crypto.randomBytes(12)` inside `encrypt()` — no IV parameter, no caching; (e) decrypted key lives only for provider construction — no module-level plaintext cache (resolution is per-request by design).
+2. **SSRF residuals (T-I-5/T-E-2 — high).** AC.3b guard at create + update + send-time is the baseline. Two implementation traps the spec wording doesn't fully pin down: (a) **resolved-addresses check** — resolve the hostname (A + AAAA, ALL records) and reject if ANY resolved IP is in the denylist ranges; string-matching the hostname is bypassable (`http://0x7f000001/`, `http://[::ffff:127.0.0.1]/`, multi-record names); (b) **redirect policy** — if the openai-compatible client follows 3xx, the denylist is defeated by a redirect to a private target; set `redirect: 'manual'` (3xx → provider error) or re-validate every hop. **This is the audit's conditional blocker — confirm the client's default behavior and record it.** Residual accepted for phase 3: DNS-rebinding TOCTOU between re-validation and fetch (IP-pinning isn't cleanly exposed by the AI SDK client) — revisit for VPC/self-hosted deployments.
+3. **Ollama exemption blast radius (T-E-3 — documented accept-risk).** User-supplied `baseUrl` for `ollama` type CAN target the internal network by design; provider error/stream content can reflect internal responses back to the user — the server becomes a semi-blind internal-request relay. Accepted per spec AC.3b item 3. Hardening request: implement `ADMIN_ALLOW_OLLAMA_USERS` env flag (default `true` in dev, recommended `false` for prod) gating create + resolution of user ollama-type providers — one gate, no code change needed to disable later. Also: upstream error bodies must not be echoed verbatim to the user beyond what streaming legitimately returns.
+4. **Decrypt-failure paths (US-302 AC.3 / US-304 AC.4).** Three distinct paths, three behaviors — implement all three, don't unify into a 500: (a) list-time hint decrypt failure → `apiKeyHint: null` + `warn` log, row still listed, no 500; (b) send-time resolution decrypt failure → `error` log + skip row + env-chain fallback, message send survives; (c) missing key env at create-with-key → `500 INTERNAL` + server log, NEVER a plaintext fallback. All failure logs follow risk #1(b) — no key material.
+5. **Audit logging + rate-limit semantics (T-R-1/T-D-1/T-D-2).** (a) Provider CRUD events (create/update/delete/set-default) logged with `{userId, providerId, type}` — no key material; extend the pino redact list (`*.apiKey`, `*.apiKeyCiphertext`, `*.ANTHROPIC_API_KEY`, `*.ENCRYPTION_KEY`) BEFORE any provider code logs (spec AC.2 ordering requirement); foreign PUT/DELETE 404s warn-logged. (b) The 30/10min mutation limit must be ONE combined bucket across POST+PUT+DELETE (three per-route buckets = 3× ceiling). (c) The message-send rate limit (60/min + 500/hr) is provider-agnostic — a custom provider must not bypass it; `abortSignal` must reach `streamText` for user-provider streams too (no provider-specific branching that drops it — US-305 AC.3).
+
+Also audit-gated: ownership as single-query `WHERE id = :id AND userId = :session` with byte-identical 404s (cross-user PUT can rebind a victim's provider to an attacker endpoint — that's a conversation-exfil primitive, not just read-IDOR); HKDF domain separation per §7 (never raw `AUTH_SECRET` as the AES key); CSRF posture (JSON-only bodies) carried to all four new routes.
+
+## Top 2 risks — Frontend (markdown + settings)
+
+1. **Rehype-raw prohibition (T-T-1 — high).** `react-markdown` without `rehype-raw` is XSS-safe by default: raw HTML in AI output renders as TEXT. Never add `rehype-raw` (or any raw-HTML pass) to the config, never use `dangerouslySetInnerHTML` in the message component tree. AI output is attacker-influencable via prompt injection — this is NOT self-XSS. Phase 4 will add `rehype-highlight` (a rehype plugin), making accidental `rehype-raw` adoption plausible then — a CI grep gate for both patterns is part of the spec hardening requests. The AC-P3-14 e2e fixture (raw HTML → text) must exist and pass.
+2. **Link attrs + safe URL handling (T-T-2 — high if bypassed).** Link component override adds `target="_blank" rel="noopener noreferrer"` + underline — it must NOT alter href sourcing. Keep react-markdown's default `urlTransform` untouched (no custom scheme expansion) — it neutralizes `javascript:`/`data:` URIs; verify this holds in the locked `^10.1.0` version if behavior seems off. Images render as links with the URL as link text — no `<img>` (tracking-pixel guard). User messages stay plain text (no markdown parsing — UI-spoofing guard).
+
+Settings page gate (Backend+Frontend shared): provider data reaches the page ONLY via `GET /api/providers` — no server-component DB reads of the `providers` table, or the ciphertext serializes into the RSC flight payload (visible in devtools, and chainable with any future stored-XSS into full key theft).
+
+---
+
+## spec hardening requests owed to PM/Orchestrator/Backend
+
+8 items (`.orchestrator/security/threat-models/phase-3.md`): (1) **redirect policy — blocking at audit**, (2) `ADMIN_ALLOW_OLLAMA_USERS` prod kill-switch, (3) prod documentation: dedicated 32-byte `ENCRYPTION_KEY` recommended, (4) decrypt-error logging rule (providerId + error class only), (5) codify settings-page-via-API-only data path, (6) resolved-addresses SSRF implementation note + tests, (7) CI grep gate for `rehype-raw`/`dangerouslySetInnerHTML`, (8) combined rate-limit bucket + provider-agnostic send limit documented. Items #1 and #6 are audit-blocking gates; #2–#5, #7–#8 recommended pre-build.
+
+## sign-off
+
+**Pending code audit.** No blocking pre-build findings; the frozen spec (rev 2) already incorporates the SSRF guard, pino redact AC, hint-decrypt-failure behavior, and SSRF unit tests. Approval contingent on: the redirect-policy confirmation (conditional blocker), the resolved-addresses denylist implementation, and the checklist phase-3 section passing.

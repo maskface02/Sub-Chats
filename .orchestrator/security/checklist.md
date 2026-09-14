@@ -1,7 +1,7 @@
 # Security Checklist (running tracker)
 
-**phase:** 0 + 1 + 2
-**last_updated:** 2026-09-13
+**phase:** 0 + 1 + 2 + 3
+**last_updated:** 2026-09-14
 **reviewer:** security
 
 Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not started, `[N/A]` = not applicable in this phase.
@@ -267,6 +267,72 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 
 ---
 
+## phase 3
+
+### threat modeling
+- [x] STRIDE model complete (`.orchestrator/security/threat-models/phase-3.md`) — extends phase-2 baseline
+- [x] OWASP Top 10 (2025) mapping included
+- [x] Spec hardening requests raised (8 items; #1 redirect policy + #6 resolved-addresses are audit-blocking gates)
+- [ ] Code audit pending (`.orchestrator/security/audits/phase-3.md` — after Backend + Frontend delivery)
+- [ ] Spec hardening items resolved or accepted by Orchestrator
+
+### key material at rest / in transit (T-I-1..4, T-T-3, T-T-4)
+- [ ] ENCRYPTION_KEY or HKDF(AUTH_SECRET) — key never logged, never in client (raw AUTH_SECRET never used as AES key)
+- [ ] GCM auth tag verified on every decrypt; tamper → hard fail (throw, never fallback plaintext)
+- [ ] IV random 12 bytes per encryption (never reused, never derived; two encryptions → different IVs)
+- [ ] Tamper-rejection unit tests: round-trip, flip-one-byte → throws, wrong key → throws, malformed envelope → throws
+- [ ] Missing key env at runtime → 500 on key-storing create, never plaintext fallback
+- [ ] Decrypted key held only for provider construction duration — no module-level plaintext-key cache
+
+### key material in responses / logs / client (T-I-1, T-I-2, T-I-3)
+- [ ] GET /api/providers (and ALL routes): masked hint only; ciphertext NEVER in any response
+- [ ] Shared whitelist serializer row → {id, type, baseUrl, defaultModel, isDefault, apiKeyHint, createdAt} on every route
+- [ ] pino redact extended BEFORE provider code logs: `*.apiKey`, `*.apiKeyCiphertext`, `*.ANTHROPIC_API_KEY`, `*.ENCRYPTION_KEY`
+- [ ] Decrypt-error logs carry providerId + error class only — no ciphertext blob, no plaintext, no raw thrown strings
+- [ ] Settings page fetches via GET /api/providers — NO server-component DB reads of `providers` (ciphertext out of RSC payload)
+- [ ] Keys never in URLs (POST bodies only); HTTPS only (Vercel default)
+
+### SSRF (T-I-5, T-E-2, T-E-3)
+- [ ] SSRF: scheme allowlist + private-IP denylist (custom) at create/update/send-time; ollama exemption documented
+- [ ] Denylist check resolves hostname (A + AAAA, ALL records) and compares resolved IPs — no hostname string matching (blocks 0x7f000001, IPv4-mapped IPv6, multi-record)
+- [ ] Provider fetch: redirects manual or re-validated (Backend to confirm — **conditional blocker** at audit)
+- [ ] Ollama exemption accept-risk documented; `ADMIN_ALLOW_OLLAMA_USERS` prod kill-switch (hardening #2)
+- [ ] Upstream provider error bodies not reflected verbatim to user beyond streamed model output (T-I-5a)
+
+### markdown XSS (T-T-1, T-T-2)
+- [ ] Markdown: NO rehype-raw, NO dangerouslySetInnerHTML (grep gate in CI)
+- [ ] Default `urlTransform` untouched; javascript:/data: URIs in AI output neutralized (verify react-markdown default)
+- [ ] Links: target=_blank rel=noopener noreferrer + underline (non-color cue); images render as links (no `<img>`)
+- [ ] User messages render as plain text (no markdown parsing)
+- [ ] Raw-HTML-renders-as-text e2e fixture (AC-P3-14) exists and passes
+
+### audit & abuse (T-R-1, T-D-1, T-D-2, T-E-1, T-E-4)
+- [ ] Provider CRUD audit-logged (create/update/delete/set-default with userId + providerId + type — no key material)
+- [ ] Foreign PUT/DELETE 404 warn-logged; 404 byte-identical to missing-id (single-query ownership, T-E-1)
+- [ ] 10-provider cap + 30/10min rate limit active (COMBINED across POST+PUT+DELETE — one bucket)
+- [ ] Message-send rate limit provider-agnostic (custom providers cannot bypass 60/min + 500/hr)
+- [ ] `abortSignal` reaches streamText for user-provider streams (no provider-specific branching, US-305 AC.3)
+- [ ] CSRF posture carried to the four new mutation routes (JSON-only bodies, SameSite=Lax)
+- [ ] Resolution per-request; module-init resolution removed; corrupt ciphertext → env fallback, no crash
+
+### tests & audit gates
+- [ ] Vitest: encryption round-trip/tamper/wrong-key/IV-uniqueness; mask-leak guard (no ciphertext/plaintext in any response body)
+- [ ] Vitest: SSRF guard (private-IP custom rejected, public accepted, ollama-localhost accepted, non-http(s) rejected, send-time re-validation) — AC-P3-12
+- [ ] Vitest: cross-user PUT/DELETE → 404; resolution precedence + chain order (AC-P3-12)
+- [ ] Playwright: add → default → send (providerId verified) → delete → env fallback; keyboard-only add-provider (AC-P3-13)
+- [ ] `pnpm audit` clean or risks documented; NO new dependencies (AC-P3-15)
+
+### sign-off gates
+- [ ] Conditional blocker resolved: provider-fetch redirect policy confirmed + fixed (T-I-5c)
+- [ ] STRIDE model approved by Orchestrator
+- [ ] Spec hardening items resolved or accepted
+- [ ] Code audit complete
+- [ ] No `high` or `critical` findings open
+- [ ] Reviewed by Critic (Muse Spark)
+- [ ] Phase 3 marked `secure` in `.orchestrator/STATE.md`
+
+---
+
 ## phase-by-phase tracker
 
 | phase | threat model | checklist | audit | sign-off |
@@ -274,7 +340,7 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 | 0    | done (preliminary) | this file | pending code review | pending |
 | 1    | done (preliminary) | this file | pending code review | pending |
 | 2    | done (preliminary) | this file | stub (`audits/phase-2.md`) | pending |
-| 3    | — | — | — | — |
+| 3    | done (preliminary) | this file | stub (`audits/phase-3.md`) | pending |
 
 ---
 

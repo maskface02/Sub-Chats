@@ -67,13 +67,48 @@ This document describes how Sub-chats is put together at the end of phase 0. It 
 
 ### AI layer
 
-- **Vercel AI SDK v4** (`ai`) with **`@ai-sdk/openai`**. The `@ai-sdk/anthropic` package is installed but unwired in phase 0 — the fallback chain is intentionally simple (OpenAI → Ollama).
-- **Provider selection** runs once at server boot in `src/lib/ai/provider.ts` (`getActiveProvider()`). It checks `OPENAI_API_KEY`, then `fetch(OLLAMA_BASE_URL/api/tags)` with a 2-second timeout, and falls back to `null`. The result is logged at `info` and memoised.
+- **Vercel AI SDK v4** (`ai`) with **`@ai-sdk/openai`** and **`@ai-sdk/anthropic`** (both wired as of phase 3). Ollama/OpenAI-compatible endpoints use `createOpenAICompatible`.
+- **Provider resolution** happens **per message send** (no module init, no caching) — see [Provider resolution](#provider-resolution-phase-3) below.
 - **Ollama** is reached via `createOpenAICompatible` (from the `ai` package) pointed at `OLLAMA_BASE_URL` — Ollama exposes an OpenAI-shaped API.
 - **Streaming**: `streamText({ model, messages, onFinish })`. The user message is inserted before the call. The `onFinish` callback persists the concatenated assistant content with `model` and `providerId`.
 - **Single in-flight stream per conversation**: an in-process `Map<conversationId, AbortController>` aborts the previous stream before starting a new one (grace ≤ 100 ms), enforcing the spec rule that only one active stream per conversation exists at a time.
 
-### Auth layer
+### Provider resolution (phase 3)
+
+Resolution replaces the phase-0 module-init logic and runs **per message send** with the session user id:
+
+```
+resolveProvider(userId):
+  row = SELECT * FROM providers WHERE userId = userId AND isDefault = true   -- one query
+  if row:
+    try: decrypt(row.apiKeyCiphertext) → build client (row id as providerId)
+    catch: log error, continue            -- corrupt ciphertext → fall through
+  env chain: OPENAI_API_KEY → ANTHROPIC_API_KEY → reachable OLLAMA_BASE_URL → null (503)
+```
+
+- **Precedence:** the user's default provider row wins; the env chain (`env:openai` / `env:anthropic` / `env:ollama` sentinels) is the fallback for users with no rows or a corrupt row. **No automatic env failover** when the user's provider errors at send time (the response is `502 PROVIDER_FAILED`).
+- **Build:** `openai` → `createOpenAI({ apiKey })`, `anthropic` → `createAnthropic({ apiKey })`, `ollama`/`custom` → openai-compatible client at the row's `baseUrl`; `defaultModel` falls back to the type default (`gpt-4o-mini`, `claude-3-5-haiku-latest`, `llama3.2`).
+- At most one row per user has `isDefault = true` (server-enforced in the create/update transaction); deleting it falls back to the env chain — no auto-promotion.
+
+### Key encryption at rest (AES-256-GCM)
+
+- **Key source:** dedicated `ENCRYPTION_KEY` (base64, 32 bytes) if set; otherwise HKDF-SHA256 derived from `AUTH_SECRET` (`salt = "subchats-providers-v1"`, `info = "providers:apikey"`).
+- **Storage format:** `v1:<iv-b64>:<ciphertext-b64>` — 12 random bytes IV per encryption, GCM ciphertext with the 16-byte auth tag appended. The `v1:` prefix allows future rotation.
+- **Exposure:** plaintext keys and full ciphertext never appear in API responses, logs (pino redact list covers `*.apiKey`, `*.apiKeyCiphertext`, `*.ANTHROPIC_API_KEY`, `*.ENCRYPTION_KEY`), or errors. Reads expose only `apiKeyHint` (`…` + last 4 chars). Tampered/wrong-key ciphertexts throw on decrypt → the row is skipped and the env chain used.
+
+### SSRF guard (custom providers)
+
+User-supplied `baseUrl` is fetched server-side, so the `custom` type is an SSRF vector. Enforced at create, update, AND send-time resolution (re-validation mitigates DNS rebinding):
+
+1. Scheme allowlist: `http` / `https` only.
+2. Hostname/IP denylist for `custom`: loopback (127/8, ::1), private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local (169.254/16, fe80::/10). Violations → `422 INVALID_INPUT`.
+3. `ollama` type is **exempt** from the private-range denylist — local Ollama is its purpose (documented accept-risk in the phase-3 threat-model addendum).
+
+### Markdown rendering
+
+Assistant messages render with `react-markdown@^10.1.0` + `remark-gfm@^4.0.1` (no new deps) in a **safe configuration**: no `rehype-raw`, no `dangerouslySetInnerHTML` — raw HTML in AI output renders as plain text; default `urlTransform` neutralises `javascript:`/`data:` URIs; links get `target="_blank" rel="noopener noreferrer"`; images render as links (no `<img>`). User messages stay plain text with preserved newlines. Rendering happens once **after** the stream completes; during streaming the message is plain-text accumulation with a caret.
+
+## Auth layer
 
 - **Auth.js v5** with `@auth/drizzle-adapter`, **Credentials** provider only, **DB session strategy** (not JWT) so sign-out invalidates server-side.
 - **Rate limit** on sign-in: in-process token bucket keyed by IP, 5 attempts / 15 min. Phase 0 keeps it in memory; phase 1 may move to Upstash Redis.
@@ -227,7 +262,7 @@ The DB schema needs **no migration** for phase 1 — `parentId`, `rootConversati
 - **Rate limit** — sign-in is 5 attempts per 15 minutes per IP, in-memory in phase 0 (single-instance dev is fine).
 - **CSRF** — Auth.js issues a CSRF token on the sign-in form; sign-out posts with that token.
 - **Session** — DB-backed (not JWT) so sign-out invalidates server-side. Auth.js default 30-day lifetime.
-- **Secrets at rest** — phase 0 reads provider keys from env vars only; per-user BYOK with encryption lands in phase 3.
+- **Secrets at rest** — per-user provider keys are AES-256-GCM encrypted in the `providers` table (see [Key encryption](#key-encryption-at-rest-aes-256-gcm)); server keys stay in env vars only.
 - **No client-side provider picker** — provider config is server-boot only, so the browser never sees which provider is selected unless it calls `/api/health`.
 - **Sentry** — SDK installed but inactive without `SENTRY_DSN`. Do not enable it in production until secrets handling and PII redaction are reviewed (phase 1).
 

@@ -110,6 +110,25 @@ Once you have at least one sub-chat, two new surfaces help you get around:
 4. Drag the divider to resize; use the **⇅** control in the divider to stack the panes vertically instead.
 5. Close a pane with its **×** — a reload always returns you to single view (the split is not saved).
 
+## Bring your own key
+
+You don't need a server-level API key — you can add your own provider from the UI:
+
+1. Sign in, then open the user menu → **Provider settings** (or go to `/settings/providers`).
+2. Click **Add provider** and pick a type:
+   - **OpenAI** — paste your API key (`sk-…`). Get one at <https://platform.openai.com/api-keys>.
+   - **Anthropic** — paste your API key (`sk-ant-…`). Get one at <https://console.anthropic.com>.
+   - **Ollama** — set base URL `http://localhost:11434` (local, no key needed).
+   - **Custom** — any OpenAI-compatible endpoint: a base URL plus an optional key (keyless endpoints allowed).
+3. Optionally set a model id (defaults apply: `gpt-4o-mini`, `claude-3-5-haiku-latest`, `llama3.2`).
+4. Save. Your **first provider becomes the default automatically** — your chats then use it instead of the server fallback.
+
+Notes:
+
+- Your chats always use your default provider when you have one; otherwise the server default (environment) is used.
+- You can store up to 10 providers; add/edit/delete are rate-limited (30 requests / 10 min).
+- Keys are **encrypted at rest (AES-256-GCM)** and **never shown again** — edit shows only a masked hint like `…abc1`. Submitting an empty key field on edit keeps the existing key.
+
 ## Verifying the provider
 
 A quick smoke test for ops / DevOps without sending a chat:
@@ -128,14 +147,14 @@ Expected response:
 }
 ```
 
-`provider.type` is `"openai"` when `OPENAI_API_KEY` is set, `"ollama"` when Ollama is reachable instead, or `null` when neither is available.
+`provider.type` is `"openai"` when `OPENAI_API_KEY` is set, `"anthropic"` when only `ANTHROPIC_API_KEY` is set, `"ollama"` when Ollama is reachable instead, or `null` when none is available. Signed-in users also see `provider.source` — `"user"` when their own default provider resolves, `"env"` for the env chain.
 
 ## Provider fallback
 
-Selection is automatic at server boot, in this order:
+Resolution happens **per message send**, in this order:
 
-1. `OPENAI_API_KEY` is set → uses `@ai-sdk/openai` with `gpt-4o-mini`.
-2. `OPENAI_API_KEY` is unset **and** Ollama responds at `OLLAMA_BASE_URL/api/tags` within 2 s → uses the first model from `/api/tags` (fallback `llama3.2`).
+1. Your **default provider** (from Provider settings), if you have one — your key and model are used.
+2. Otherwise the server env chain, in order: `OPENAI_API_KEY` → `ANTHROPIC_API_KEY` → Ollama (if reachable at `OLLAMA_BASE_URL`).
 3. Otherwise → chat requests return `503 NO_PROVIDER` and the UI shows the banner.
 
 If the resolved provider fails mid-stream, the partial assistant message is saved and the UI shows an inline error with a **Retry** button.
