@@ -2,10 +2,11 @@ import { type NextRequest } from "next/server";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import { checkMessagesRateLimit, checkMutationRateLimit } from "@/lib/auth/rate-limit";
 import { jsonError, type ErrorCode } from "@/lib/types/api";
 import { isStreamActive, streamChatResponse } from "@/lib/ai/stream";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
@@ -13,11 +14,11 @@ export const dynamic = "force-dynamic";
 
 // POST /api/chats/:id/messages/:messageId/regenerate — US-408
 // Deletes the LAST assistant message and re-streams over the same history.
-export async function POST(
+async function regenerateMessage(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string; messageId: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -129,3 +130,5 @@ export async function POST(
       : 500;
   return jsonError(status, errorBody.error.code, errorBody.error.message);
 }
+
+export const POST = withRequestLogging(regenerateMessage);

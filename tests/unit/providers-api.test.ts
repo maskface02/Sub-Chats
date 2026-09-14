@@ -74,6 +74,7 @@ vi.mock("@/lib/ai/ssrf-guard", () => ({
 }));
 
 vi.mock("@/lib/log", () => ({
+  withRequestId: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() })),
   log: {
     info: vi.fn(),
     warn: m.logWarn,

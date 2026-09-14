@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { checkBranchRateLimit } from "@/lib/auth/rate-limit";
 import {
   BranchRequestSchema,
@@ -18,11 +19,11 @@ import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
 
-export async function POST(
+async function branchChat(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -154,3 +155,5 @@ export async function POST(
   };
   return jsonRaw(response, 201);
 }
+
+export const POST = withRequestLogging(branchChat);

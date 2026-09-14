@@ -15,12 +15,15 @@ permissions:
 
 jobs:
   verify:
-    name: Verify (lint, typecheck, unit, build)
+    name: Verify (typecheck, unit, build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       AUTH_SECRET: ci-dummy-secret-do-not-use-in-prod-32ch
-      DATABASE_URL: file:./.ci-build.db
+      # Harmless offline sentinel: `next build` never connects to the DB
+      # (route handlers are force-dynamic), but the value must be a postgres://
+      # URL, never `file:` (pglite dev driver — US-503 / AC.7, US-511 AC.20).
+      DATABASE_URL: postgres://offline:offline@localhost:5432/offline
       AUTH_URL: http://localhost:3000
     steps:
       - name: Checkout
@@ -33,14 +36,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        # Theoretical for phase 0: node_modules is not committed; first CI run
-        # will resolve and cache all deps. Once Backend/Frontend land code,
-        # package-lock.json will be generated and `npm ci` becomes reproducible.
-        run: npm ci || npm install
+        run: npm ci
 
-      - name: Lint
-        run: npm run lint
-
+      # No `lint` step: the repo has no ESLint config, and `next lint` in
+      # Next.js 15 is interactive (prompts to install/configure ESLint) when
+      # none exists, which hangs CI. Re-add lint only if an ESLint config is
+      # introduced (US-511 AC.20 removal).
       - name: Typecheck
         run: npm run typecheck
 
@@ -50,43 +51,7 @@ jobs:
       - name: Build
         run: npm run build
 
-  e2e:
-    name: E2E (Playwright)
-    runs-on: ubuntu-latest
-    needs: verify
-    timeout-minutes: 30
-    env:
-      AUTH_SECRET: ci-dummy-secret-do-not-use-in-prod-32ch
-      DATABASE_URL: file:./.ci-e2e.db
-      AUTH_URL: http://localhost:3000
-      OLLAMA_BASE_URL: http://localhost:11434/v1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci || npm install
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Run E2E tests
-        # OPENAI_API_KEY is optional; if absent the tests must fall back to
-        # Ollama or assert the no-provider banner per spec US-008.
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: npm run test:e2e
-
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
+  # e2e (Playwright) job REMOVED / quarantined per phase-5 spec §9:
+  # "E2E in CI (Playwright needs a live provider; documented as manual gate)"
+  # see .orchestrator/specs/phase-5.md §9 out-of-scope list. E2E is run
+  # manually post-deploy via docs/runbook.md smoke checklist (US-507 AC.12).

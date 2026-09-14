@@ -2,7 +2,7 @@ import { type NextRequest } from "next/server";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { providers } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import { checkProviderRateLimit } from "@/lib/auth/rate-limit";
 import {
   UpdateProviderRequestSchema,
@@ -13,6 +13,7 @@ import {
 import { encrypt, CryptoError } from "@/lib/crypto/encrypt";
 import { validateProviderBaseUrl } from "@/lib/ai/ssrf-guard";
 import { toProviderDto } from "@/lib/ai/provider-dto";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
@@ -43,11 +44,11 @@ function notFound(): Response {
   return jsonError(404, "NOT_FOUND", "Provider not found");
 }
 
-export async function PUT(
+async function updateProvider(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -144,11 +145,13 @@ export async function PUT(
   return jsonRaw(updated, 200);
 }
 
-export async function DELETE(
+export const PUT = withRequestLogging(updateProvider);
+
+async function deleteProvider(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -186,3 +189,5 @@ export async function DELETE(
 
   return new Response(null, { status: 204 });
 }
+
+export const DELETE = withRequestLogging(deleteProvider);

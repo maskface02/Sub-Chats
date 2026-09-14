@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { and, eq, asc, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { checkMutationRateLimit } from "@/lib/auth/rate-limit";
 import { jsonError, jsonRaw } from "@/lib/types/api";
 import { isStreamActive } from "@/lib/ai/stream";
@@ -37,11 +38,11 @@ export function collectLiveSubtreeIds(
   return ids;
 }
 
-export async function GET(
+async function getChat(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -162,13 +163,15 @@ export async function GET(
   );
 }
 
+export const GET = withRequestLogging(getChat);
+
 // ---------- delete / restore (phase 4 US-401) ----------
 
-export async function DELETE(
+async function deleteChat(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -270,11 +273,13 @@ export async function DELETE(
   );
 }
 
-export async function POST(
+export const DELETE = withRequestLogging(deleteChat);
+
+async function restoreChat(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -319,3 +324,5 @@ export async function POST(
     return jsonError(500, "INTERNAL", "Could not restore conversation");
   }
 }
+
+export const POST = withRequestLogging(restoreChat);

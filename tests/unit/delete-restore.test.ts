@@ -21,6 +21,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/log", () => ({
+  withRequestId: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() })),
   log: { info: vi.fn(), warn: vi.fn(), error: m.logError, debug: vi.fn(), child: vi.fn() },
 }));
 

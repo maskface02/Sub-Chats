@@ -2,12 +2,13 @@ import { type NextRequest } from "next/server";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { providers } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import { checkProviderRateLimit } from "@/lib/auth/rate-limit";
 import { CreateProviderRequestSchema, jsonError, jsonRaw } from "@/lib/types/api";
 import { encrypt, CryptoError } from "@/lib/crypto/encrypt";
 import { validateProviderBaseUrl } from "@/lib/ai/ssrf-guard";
 import { toProviderDto } from "@/lib/ai/provider-dto";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
@@ -35,8 +36,11 @@ function rateLimitHeaders(res: Response, retryAfterMs: number): Response {
   return res;
 }
 
-export async function GET() {
-  const session = await auth();
+async function listProviders(
+  _req: NextRequest,
+  _ctx: unknown,
+  session: Session | null,
+) {
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -51,8 +55,13 @@ export async function GET() {
   return jsonRaw({ items: rows.map(toProviderDto) }, 200);
 }
 
-export async function POST(req: NextRequest) {
-  const session = await auth();
+export const GET = withRequestLogging(listProviders);
+
+async function createProvider(
+  req: NextRequest,
+  _ctx: unknown,
+  session: Session | null,
+) {
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -164,3 +173,5 @@ export async function POST(req: NextRequest) {
     return jsonError(500, "INTERNAL", "Could not create provider");
   }
 }
+
+export const POST = withRequestLogging(createProvider);

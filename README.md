@@ -2,13 +2,13 @@
 
 > AI chat with branching conversation trees — a foundation for threaded, exploratory conversations with any model.
 
-![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-4-blue) ![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-v1.0.0--production--ready-brightgreen) ![license](https://img.shields.io/badge/license-MIT-green)
 
-> Phase 4 is the polish pass: delete with undo, export, tree search, stop, edit/regenerate, shortcuts. It builds on phase 3 (BYOK providers, markdown) and phases 0–2 (auth, streaming, branching, tree navigation, split view).
+> **v1.0.0 — production ready.** All six phases shipped: auth, streaming chat, sub-chat branching, tree navigation, BYOK providers, everyday polish, and the production deploy pipeline. See the [release notes](RELEASE_NOTES.md).
 
 ## Features
 
-Phase 0 includes:
+Everything shipped in v1.0.0, across phases 0–4:
 
 - **Email + password auth** — sign up, sign in, sign out. Passwords hashed with bcrypt (cost 12).
 - **Root chat** — start a new conversation and stream AI replies token-by-token.
@@ -28,7 +28,7 @@ Phase 0 includes:
 - **Keyboard shortcuts** — `Cmd/Ctrl+K`, `/`, `Cmd/Ctrl+\`, `Esc`, `?` (press `?` for the overlay).
 - **Syntax-highlighted code blocks** — GitHub light/dark themes for fenced code.
 
-What is **not** yet shipped: attachments, tool use, optimistic rendering, MFA. See the [roadmap](#roadmap).
+What is **not** shipped: attachments, tool use, optimistic rendering, MFA. See the [roadmap](#roadmap).
 
 ## Sub-chats (the unique feature)
 
@@ -51,7 +51,24 @@ Three ways to move between conversations:
 
 ## Screenshots
 
-Coming after phase 0 ships. The UI is minimal on purpose — signin screen, chat list, and a single conversation view.
+Placeholder table — captures owned by UX (one pass covers all surfaces):
+
+| # | Surface | Captured |
+|---|---|---|
+| 1 | Sign-in / sign-up screen | ☐ |
+| 2 | Chat list (home) | ☐ |
+| 3 | Conversation view with a streaming reply | ☐ |
+| 4 | Highlight → "Ask about this" pill → sub-chat with parent-context banner | ☐ |
+| 5 | Tree-map sidebar (incl. mobile drawer) | ☐ |
+| 6 | Split view with the draggable divider | ☐ |
+| 7 | Provider settings (`/settings/providers`) with masked key hint | ☐ |
+| 8 | Export menu (Markdown / JSON) | ☐ |
+| 9 | Delete confirm dialog + undo toast | ☐ |
+| 10 | Tree search with `<mark>` highlights | ☐ |
+| 11 | Stop button + "Stopped" chip | ☐ |
+| 12 | Edit-in-place textarea + regenerate affordance | ☐ |
+| 13 | `?` shortcut overlay | ☐ |
+| 14 | Syntax-highlighted code block (light + dark themes) | ☐ |
 
 ## Quick start
 
@@ -60,13 +77,22 @@ You need Node 20+ and an AI provider (OpenAI key or a local Ollama install).
 ```bash
 npm install
 cp .env.example .env.local       # then edit .env.local (AUTH_SECRET, OPENAI_API_KEY)
-npm run db:push                  # create the SQLite database
 npm run dev                      # http://localhost:3000
 ```
 
-Open <http://localhost:3000>, sign up, click **New chat**, and send a message.
+Open <http://localhost:3000>, sign up, click **New chat**, and send a message. No database setup needed — dev uses in-process pglite and bootstraps its own schema.
 
 Full setup, troubleshooting, and configuration → [docs/getting-started.md](docs/getting-started.md).
+
+## Deploy
+
+1. Create a Vercel Postgres database and copy its `DATABASE_URL`.
+2. Import the repo in Vercel — PRs get preview deploys, `main` deploys to production.
+3. Set the env vars (`AUTH_SECRET`, `ENCRYPTION_KEY`, `AUTH_TRUST_HOST`, `LOG_LEVEL`, …).
+4. Run migrations once against the new database: `DATABASE_URL=… npm run db:migrate`.
+5. Verify: `curl https://<your-app>/api/health` → `200`, then run the smoke checklist.
+
+Full runbook — backup/restore, rollback, secret rotation, incident response → [docs/deploy.md](docs/deploy.md).
 
 ## Architecture
 
@@ -85,7 +111,7 @@ Full setup, troubleshooting, and configuration → [docs/getting-started.md](doc
                 │
 ┌───────────────▼──────────────────────────────────────────┐
 │ Data + AI                                                 │
-│   ├─ Drizzle ORM → SQLite (dev) / Postgres (prod)        │
+│   ├─ Drizzle ORM → pglite (dev) / Postgres (prod)         │
 │   └─ Vercel AI SDK → @ai-sdk/openai → fallback Ollama    │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -96,7 +122,8 @@ Detailed write-up → [docs/architecture.md](docs/architecture.md).
 
 - **[Next.js 15](https://nextjs.org)** — App Router, React Server Components, route handlers
 - **[Auth.js v5](https://authjs.dev)** — credentials provider, DB sessions, rate-limited sign-in
-- **[Drizzle ORM](https://orm.drizzle.team)** — typed schema, SQLite for dev, Postgres-ready
+- **[Drizzle ORM](https://orm.drizzle.team)** — typed schema; pglite in dev, Postgres in production (`DATABASE_URL` driver switch)
+- **[pino](https://getpino.io)** — structured request logging with `X-Request-Id` correlation
 - **[Vercel AI SDK v4](https://sdk.vercel.ai)** — `streamText` → SSE for streaming chat
 - **[@assistant-ui/react](https://www.assistant-ui.com)** — chat surface (composer + message list)
 - **[shadcn/ui](https://ui.shadcn.com)** — accessible primitives built on Radix
@@ -123,14 +150,16 @@ Detailed write-up → [docs/architecture.md](docs/architecture.md).
 
 ## Roadmap
 
-Phase 0 is **shipped** when the [definition of done](.orchestrator/specs/phase-0.md#11-definition-of-done) is met. Subsequent phases:
+v1.0.0 ships phases 0–5 — every [spec](.orchestrator/specs/) frozen and complete:
 
-- **Phase 1** — sub-chat creation (highlight any assistant text → branch into a sub-chat). DB schema already reserves the columns.
-- **Phase 2** — tree-map sidebar + split view (shipped; regenerated messages deferred to phase 3).
-- **Phase 3** — BYOK providers (encrypted per-user keys), Anthropic, markdown rendering (shipped).
-- **Phase 4** — delete with undo, export, tree search, stop, syntax highlighting, edit/regenerate, keyboard shortcuts (shipped).
+- **Phase 0** — auth, streaming chat, persistence, provider fallback (shipped)
+- **Phase 1** — sub-chat branching with full parent context (shipped)
+- **Phase 2** — tree-map sidebar + split view (shipped)
+- **Phase 3** — BYOK providers (encrypted keys), Anthropic, markdown rendering (shipped)
+- **Phase 4** — delete with undo, export, tree search, stop, syntax highlighting, edit/regenerate, keyboard shortcuts (shipped)
+- **Phase 5** — Vercel + Postgres deploy pipeline, health check, request logging, runbook (shipped)
 
-Full specs → [`.orchestrator/specs/`](.orchestrator/specs/).
+What is **not** shipped (no schedule): attachments, tool use, optimistic rendering, MFA, a shared rate-limit store (Upstash Redis), E2E in CI.
 
 ## Contributing
 

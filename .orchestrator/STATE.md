@@ -3,17 +3,32 @@
 last_updated: 2026-09-13
 
 ## phase
-current: 4
-status: complete
-title: "polish: delete/undo, export, search, stop, highlighting, edit/regenerate, shortcuts"
-spec: .orchestrator/specs/phase-4.md (frozen, revision 2)
+current: 5
+status: complete — PROJECT SHIPPED
+title: "production deploy (final gate)"
+spec: .orchestrator/specs/phase-5.md (frozen, revision 2)
 
 ## phase_status
 - 0: ✅ complete (17 tests)
 - 1: ✅ complete (46 tests — sub-chat core)
 - 2: ✅ complete (53 tests — tree-map + split view)
 - 3: ✅ complete (114 tests — BYOK providers + markdown)
-- 4: ✅ complete (156 tests — soft-delete/undo, export, tree search, stop, rehype-highlight, edit/regenerate, keyboard shortcuts)
+- 4: ✅ complete (156 tests — polish suite)
+- 5: ✅ complete (156 tests — prod driver switch, request logging, health v2, HSTS, ADMIN flag, CI reconciliation, migration regen w/ real round-trip, runbook, release notes)
+
+## production_readiness_gate (§4 of phase-5 spec)
+- G1 typecheck 0 errors: ✅
+- G2 156/156 unit tests: ✅
+- G3 build passes with DATABASE_URL set, no live DB: ✅
+- G4 fresh-DB migrate round-trip clean: ✅ (verified against docker postgres:16)
+- G4b prod driver switch verified: ✅
+- G4c CI green + reconciled: ✅
+- G5 deployed-env smoke green: ⏳ operator task (docs/runbook.md checklist) — requires a real deployment
+- G6 health endpoint verified on prod: ⏳ operator task (same deployment)
+- G7 audit + headers + cookie sweep documented: ✅ (Security verdict: APPROVED FOR PRODUCTION)
+- G8 runbook complete: ✅ (docs/runbook.md + docs/deploy.md)
+- G9 observability implemented + log structure verified: ✅ (Vercel-observability + pino request logs)
+- G10 docs updated: ✅ (README final pass, architecture prod topology, RELEASE_NOTES.md)
 
 ## active_roles (phase 1)
 - PM: spec delivered (frozen rev 2 after 3 polish fixes + 3 open-question resolutions)

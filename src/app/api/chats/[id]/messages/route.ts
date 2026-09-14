@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import {
   jsonError,
   SendMessageRequestSchema,
@@ -10,16 +10,17 @@ import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
 import { deriveTitle, streamChatResponse } from "@/lib/ai/stream";
 import { checkMessagesRateLimit } from "@/lib/auth/rate-limit";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(
+async function sendMessage(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -112,3 +113,5 @@ export async function POST(
       : 500;
   return jsonError(status, errorBody.error.code, errorBody.error.message);
 }
+
+export const POST = withRequestLogging(sendMessage);

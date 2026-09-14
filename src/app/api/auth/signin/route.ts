@@ -11,6 +11,7 @@ import {
   jsonError,
   jsonRaw,
 } from "@/lib/types/api";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
@@ -29,7 +30,7 @@ const CallbackSchema = z.object({
   callbackUrl: z.string().optional(),
 });
 
-export async function POST(req: NextRequest) {
+async function signinHandler(req: NextRequest) {
   let body: unknown;
   try {
     body = await req.json();
@@ -101,3 +102,5 @@ export async function POST(req: NextRequest) {
     return jsonError(500, "PROVIDER_FAILED", "Sign-in failed");
   }
 }
+
+export const POST = withRequestLogging(signinHandler, { resolveSession: false });

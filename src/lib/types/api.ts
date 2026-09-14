@@ -373,21 +373,13 @@ export const UpdateProviderRequestSchema = z
 
 export type UpdateProviderRequest = z.infer<typeof UpdateProviderRequestSchema>;
 
-// ---------- health ----------
-
-export const HealthProviderSchema = z.object({
-  type: z.enum(["openai", "anthropic", "ollama", "custom"]).nullable(),
-  model: z.string().nullable(),
-  baseUrl: z.string().nullable(),
-  source: z.enum(["user", "env"]).nullable(),
-});
-
-export type HealthProvider = z.infer<typeof HealthProviderSchema>;
+// ---------- health (phase 5 US-506 AC.11: non-revealing booleans only) ----------
 
 export const HealthResponseSchema = z.object({
-  status: z.literal("ok"),
-  provider: HealthProviderSchema,
-  ollamaReachable: z.boolean(),
+  status: z.enum(["ok", "degraded"]),
+  dbReachable: z.boolean(),
+  providerResolved: z.boolean(),
+  migrationsApplied: z.boolean(),
 });
 
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;

@@ -1,6 +1,6 @@
 # Security Checklist (running tracker)
 
-**phase:** 0 + 1 + 2 + 3 + 4
+**phase:** 0 + 1 + 2 + 3 + 4 + 5 (final)
 **last_updated:** 2026-09-14
 **reviewer:** security
 
@@ -406,11 +406,12 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 
 | phase | threat model | checklist | audit | sign-off |
 |---|---|---|---|---|
-| 0    | done (preliminary) | this file | pending code review | pending |
-| 1    | done (preliminary) | this file | pending code review | pending |
-| 2    | done (preliminary) | this file | stub (`audits/phase-2.md`) | pending |
-| 3    | done (preliminary) | this file | stub (`audits/phase-3.md`) | pending |
-| 4    | done (preliminary) | this file | stub (`audits/phase-4.md`) | pending |
+| 0    | done (preliminary) | this file | closed via final sweep | pending |
+| 1    | done (preliminary) | this file | closed via final sweep | pending |
+| 2    | done (preliminary) | this file | closed via final sweep | pending |
+| 3    | done (preliminary) | this file | closed via final sweep | pending |
+| 4    | done (preliminary) | this file | closed via final sweep | pending |
+| 5    | done (consolidated) | this file | done (`audits/phase-5.md`, 32 checks) | done (**approved with conditions**, `handoffs/security-phase-5.md`) |
 
 ---
 
@@ -426,3 +427,36 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
   - #3 pino redact extended — pending Backend decision
   - remaining hardening items (#4–#12) — pending code-review-time decisions
 - Phase 1 FK migration safety: verify no orphan rows in prod before applying Q7 FK constraint
+
+---
+
+## phase 5 (final production sweep)
+
+### prod gates (spec §4 / AC.14–17)
+- [x] `npm audit --omit=dev` documented: 0 critical, 2 high (postcss/next, jsondiffpatch/ai — build-time, accepted AR-4), 2 moderate, 5 low (`.orchestrator/security/audits/phase-5.md` §2)
+- [ ] HSTS in prod (`next.config.ts` conditional on deploy env) — **[~] deferred → condition C3, owner DevOps**
+- [~] Session cookie `Secure` verified in prod — config posture passes (trustHost:true, auth.ts:42); actual deployed-URL check is runbook G7 operator task
+- [ ] `ADMIN_ALLOW_OLLAMA_USERS` env flag implemented (AC.17 decision: implement now, default false) — **[~] deferred → condition C4, owner Backend**
+- [x] Consolidated threat model complete (`.orchestrator/security/threat-models/phase-5.md`, prior-phase closure table)
+- [x] Final audit complete, full sweep (`.orchestrator/security/audits/phase-5.md`, 32 checks)
+- [x] Accepted-risk register consolidated (AR-1..8 in threat-model §3)
+- [x] Final sign-off written (`.orchestrator/handoffs/security-phase-5.md` — APPROVED WITH CONDITIONS)
+
+### carried items — closed at final sweep
+- [x] phase 0: stale `npm audit cannot run` blocker — closed (node_modules exists, audit run, documented)
+- [x] phase 0 T-I-12 / `[~]` HSTS-dev item — resolved into the phase-5 prod-gates condition C3 (see above)
+- [x] phase 3 hardening #1 BLOCKING: provider-fetch redirect policy — closed, `ssrfSafeFetch` per-hop re-validation (ssrf-guard.ts:174–203)
+- [x] phase 3 hardening #6: resolved-addresses SSRF — closed (lookup all:true, ssrf-guard.ts:97–119)
+- [x] phase 4 hardening #1: rate-limit bucket reconciliation — closed; edit/regenerate share the send LLM bucket + mutation bucket (edit/route.ts:6,60 comment)
+- [x] phase 4 hardening #3: deleted-ancestor behavior — closed via shared live-row lookups filtering deletedAt on ancestor chains (route greps + stream.ts:76,357,374)
+- [x] earlier-phase "code audit pending" rows (phases 0–4) — closed by this sweep: every phase-0..4 checklist item re-verified against shipped code (A1–A23 audit rows)
+
+### open conditions carried into sign-off (NOT closed by code)
+- [ ~ ] C1 prod DB driver switch US-510 (Backend) — see audit A25
+- [ ~ ] C2 request logging US-504 (Backend) — see audit A26
+- [ ~ ] C3 HSTS (DevOps)
+- [ ~ ] C4 ADMIN_ALLOW_OLLAMA_USERS flag (Backend)
+- [ ~ ] C5 health endpoint AC.11 shape (Backend)
+- [ ~ ] C6 CI reconciliation (DevOps)
+- [ ~ ] C7 migration chain: 0001_noop → 0001_soft_delete + journal reset (DevOps+Backend)
+- [ ] deployment verification (live URL: health/smoke/cookie Secure/headers) — operator task per runbook, out of sign-off scope

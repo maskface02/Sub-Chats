@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { and, desc, eq, lt, isNull, sql, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 import {
   ChatListQuerySchema,
   jsonError,
@@ -15,8 +16,11 @@ export const runtime = "nodejs";
 
 const DEFAULT_LIMIT = 50;
 
-export async function GET(req: NextRequest) {
-  const session = await auth();
+async function listChats(
+  req: NextRequest,
+  _ctx: unknown,
+  session: Session | null,
+) {
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -82,8 +86,13 @@ export async function GET(req: NextRequest) {
   return jsonRaw({ items, nextCursor }, 200);
 }
 
-export async function POST() {
-  const session = await auth();
+export const GET = withRequestLogging(listChats);
+
+async function createChat(
+  _req: NextRequest,
+  _ctx: unknown,
+  session: Session | null,
+) {
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -122,3 +131,5 @@ export async function POST() {
     201,
   );
 }
+
+export const POST = withRequestLogging(createChat);

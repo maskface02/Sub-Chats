@@ -44,6 +44,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/log", () => ({
+  withRequestId: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() })),
   log: {
     info: m.logInfo,
     warn: m.logWarn,
@@ -265,6 +266,7 @@ describe("provider resolution — per-type client construction (US-304 AC.3)", (
   });
 
   it("ollama row → openai-compatible client at row baseUrl", async () => {
+    process.env.ADMIN_ALLOW_OLLAMA_USERS = "true";
     m.selectRows = [
       makeRow({
         type: "ollama",
@@ -282,6 +284,7 @@ describe("provider resolution — per-type client construction (US-304 AC.3)", (
     });
     expect(p!.baseUrl).toBe("http://localhost:11434/v1");
     expect(p!.modelId).toBe("llama3.2");
+    delete process.env.ADMIN_ALLOW_OLLAMA_USERS;
   });
 
   it("custom row → openai-compatible client, keyless allowed", async () => {

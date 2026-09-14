@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how Sub-chats is put together at the end of phase 0. It is intentionally textual — diagrams, conventions, and the rationale behind the layers.
+This document describes how Sub-chats is put together as of v1.0.0 (phase 5). It is intentionally textual — diagrams, conventions, and the rationale behind the layers.
 
 ## High-level diagram
 
@@ -32,11 +32,11 @@ This document describes how Sub-chats is put together at the end of phase 0. It 
         │         │          │
 ┌───────▼─────┐  ┌▼──────────▼────────────────┐  ┌─────────────────────┐
 │ Drizzle ORM │  │ Vercel AI SDK (streamText) │  │ bcrypt (cost 12)    │
-│ → SQLite    │  │  → @ai-sdk/openai          │  │ (signup password    │
+│ → pglite    │  │  → @ai-sdk/openai          │  │ (signup password    │
 │   (dev)     │  │  → OpenAI-compatible       │  │  hashing)           │
 │ → Postgres  │  │    (Ollama fallback)       │  │                     │
-│   (prod,    │  │                            │  │ in-memory token     │
-│   phase 1)  │  │                            │  │ bucket for rate     │
+│   (prod)    │  │                            │  │ in-memory token     │
+│             │  │                            │  │ bucket for rate     │
 │             │  │                            │  │ limit (5/15min/IP)  │
 └─────────────┘  └────────────────────────────┘  └─────────────────────┘
 ```
@@ -57,11 +57,11 @@ This document describes how Sub-chats is put together at the end of phase 0. It 
 - **`/api/chats`** — `GET` lists the current user's root conversations (cursor-paginated by `updatedAt`); `POST` creates a new root conversation with `parentId=null`, `depth=0`, `rootConversationId=<self>`.
 - **`/api/chats/:id`** — `GET` returns the conversation meta + all messages in one response. Cross-user access returns **404**, not 403, to avoid leaking conversation IDs.
 - **`/api/chats/:id/messages`** — `POST` persists the user message, calls `streamText(...)`, streams tokens via SSE (`toDataStreamResponse`), and on `onFinish` persists the assistant message. On error mid-stream, the partial assistant message is saved and the stream is closed with an error event the client renders as an inline banner with Retry.
-- **`/api/health`** — returns `{ status, provider, ollamaReachable }` for DevOps to verify provider config without sending a chat.
+- **`/api/health`** — liveness + dependency check: provider status in dev (drives the no-provider banner), the non-revealing prod contract (`dbReachable` / `providerResolved` / `migrationsApplied`) in production — see [Production topology](#production-topology-phase-5) and the [health entry](api/endpoints.md#health).
 
 ### Data layer
 
-- **Drizzle ORM** with the schema in `src/lib/db/schema.ts`. Dev runs against SQLite (`better-sqlite3`); production uses Postgres (phase 1 — switching the `drizzle-orm/<dialect>` import and rewriting no SQL is the goal).
+- **Drizzle ORM** with the schema in `src/lib/db/schema.ts`. The driver is selected at startup by the `DATABASE_URL` branch in `src/lib/db/index.ts`: pglite when unset (dev), `drizzle-orm/node-postgres` when set (production). Details → [Production topology](#production-topology-phase-5).
 - **Tables**: `users`, `accounts` (unused in phase 0, OAuth-ready), `sessions`, `verification_tokens`, `conversations`, `messages`, `providers` (no rows in phase 0; reserved for phase 3 BYOK).
 - **Indexes**: `(userId, updatedAt DESC)` on `conversations` for the list query; `(conversationId, createdAt ASC)` on `messages` for thread loading; `(parentId)` and `(rootConversationId)` for the future subtree queries.
 
@@ -137,7 +137,7 @@ Message-level soft delete does not exist. `POST .../messages/:messageId/edit` **
 ## Auth layer
 
 - **Auth.js v5** with `@auth/drizzle-adapter`, **Credentials** provider only, **DB session strategy** (not JWT) so sign-out invalidates server-side.
-- **Rate limit** on sign-in: in-process token bucket keyed by IP, 5 attempts / 15 min. Phase 0 keeps it in memory; phase 1 may move to Upstash Redis.
+- **Rate limit** on sign-in: in-process token bucket keyed by IP, 5 attempts / 15 min. In-memory in v1.0.0 — a single-instance limitation documented in the [release notes](../RELEASE_NOTES.md); a shared store (Upstash Redis) is a future option, out of phase-5 scope.
 - **Session shape**: `{ user: { id, email, name, image }, expires }`. `session.user.id` is the **only** trusted join key — every query filters by it.
 
 ## Data flow
@@ -290,10 +290,44 @@ The DB schema needs **no migration** for phase 1 — `parentId`, `rootConversati
 - **Session** — DB-backed (not JWT) so sign-out invalidates server-side. Auth.js default 30-day lifetime.
 - **Secrets at rest** — per-user provider keys are AES-256-GCM encrypted in the `providers` table (see [Key encryption](#key-encryption-at-rest-aes-256-gcm)); server keys stay in env vars only.
 - **No client-side provider picker** — provider config is server-boot only, so the browser never sees which provider is selected unless it calls `/api/health`.
-- **Sentry** — SDK installed but inactive without `SENTRY_DSN`. Do not enable it in production until secrets handling and PII redaction are reviewed (phase 1).
+- **Error tracking** — Vercel built-in observability + structured pino request logging; Sentry was removed in phase-5 prep and is deliberately not re-added (see [Production topology](#production-topology-phase-5)).
 
 ## Open architectural decisions (deferred)
 
-- **WebSocket vs SSE** — phase 0 is SSE only. WS is an option for phase 2 if we want bidirectional pushes (e.g., background tasks).
-- **Optimistic message rendering** — phase 0 is server-first (the user message is only shown after persistence). Optimistic rendering lands in phase 2.
-- **Postgres migration script** — phase 0 ships SQLite only. The schema is dialect-portable; the prod migration script lands in phase 1.
+- **WebSocket vs SSE** — v1.0.0 is SSE only. WS remains an option if bidirectional pushes (e.g., background tasks) are ever needed.
+- **Optimistic message rendering** — server-first (the user message is only shown after persistence); not scheduled.
+- **Postgres migration script** — resolved in phase 5: the regenerated drizzle-kit chain + `db:migrate` shipped; see [Production topology](#production-topology-phase-5).
+
+## Production topology (phase 5)
+
+### Database driver switch
+
+`src/lib/db/index.ts` branches on `DATABASE_URL` at startup:
+
+| `DATABASE_URL` | Driver | Schema setup |
+|---|---|---|
+| unset | `@electric-sql/pglite` (in-process WASM Postgres) | `ensureSchema()` applies the full DDL idempotently on first use — dev only; `PGLITE_DATA_DIR` optionally persists it to disk |
+| `postgres://` / `postgresql://` | `drizzle-orm/node-postgres` (`pg` Pool) | `drizzle-kit migrate` (`npm run db:migrate`) — `ensureSchema()` is never invoked on this path |
+
+- Dev needs zero setup: no env var, no migrate step — pglite bootstraps itself.
+- Production always sets `DATABASE_URL` (Vercel Postgres). The build never touches the DB: `next build` succeeds with `DATABASE_URL` set but unreachable (route handlers are not evaluated at build time).
+- **Migrations:** the regenerated chain is exactly `drizzle/0000_init.sql` (full schema) + `0001` (soft-delete columns + live-only partial index); `db:migrate` is idempotent (second run applies 0 statements). Verified by a round-trip test: fresh DB → migrate → `drizzle-kit generate` produces zero new statements. `ensureSchema()` and migrations must never both manage one database.
+
+### Health endpoint contract (prod)
+
+`GET /api/health` in production returns:
+
+```json
+{ "status": "ok", "dbReachable": true, "providerResolved": true, "migrationsApplied": true }
+```
+
+- `200` when all three checks pass; `503` with `status: "degraded"` otherwise — post-deploy verification is one `curl -sf`.
+- **Non-revealing:** booleans only — no provider names, model ids, base URLs, or connection details. Local dev keeps the richer `{ status, provider, ollamaReachable }` shape that drives the sign-in banner ([endpoints.md](api/endpoints.md#health)).
+
+### Request logging + correlation
+
+Every `/api/*` request is logged by pino with `requestId`, `route`, `status`, `durationMs` — plus `userId` when authenticated, omitted anonymously. `requestId` is a locally-generated UUID per request (identical behavior local + Vercel, no platform coupling — the §10 Q3 decision) and is echoed to the client in the `X-Request-Id` response header, so a user-reported bug maps to exactly one log line. The pino redact list is unchanged: no PII, keys, or secrets in logs.
+
+### Observability choice
+
+v1 uses Vercel's built-in observability (log drains, wall-clock metrics) plus the structured pino request log — no third-party error tracker. Sentry was removed during phase-5 prep (unused dependency; its 2 CVEs retired with it), and re-adding it would cost instrumentation work plus a new vendor/DSN surface conditioned on handler exceptions, for marginal gain at current scale. Revisit only if users report bugs that Vercel's log view cannot cluster, or fingerprint-based grouping becomes necessary. Deploy, backup/restore, rollback, and secret-rotation procedures → [docs/deploy.md](deploy.md).

@@ -2,8 +2,9 @@ import { type NextRequest } from "next/server";
 import { and, eq, asc, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import { ExportQuerySchema, jsonError, jsonRaw } from "@/lib/types/api";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 
 export const runtime = "nodejs";
 
@@ -139,11 +140,11 @@ export function buildMarkdownExport(args: {
 
 // ---------- route ----------
 
-export async function GET(
+async function exportChat(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -256,3 +257,5 @@ export async function GET(
   res.headers.set("Content-Disposition", contentDisposition(`${filenameBase}.md`));
   return res;
 }
+
+export const GET = withRequestLogging(exportChat);

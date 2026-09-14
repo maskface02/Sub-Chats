@@ -2,18 +2,19 @@ import { type NextRequest } from "next/server";
 import { and, eq, asc, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import { jsonError, jsonRaw, type TreeNodeDto } from "@/lib/types/api";
+import { withRequestLogging } from "@/lib/obs/request-logging";
 
 export const runtime = "nodejs";
 
 const NODE_CAP = 500;
 
-export async function GET(
+async function getTree(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
+  session: Session | null,
 ) {
-  const session = await auth();
   if (!session?.user?.id) {
     return jsonError(401, "UNAUTHENTICATED", "Sign in required");
   }
@@ -143,3 +144,5 @@ export async function GET(
     200,
   );
 }
+
+export const GET = withRequestLogging(getTree);

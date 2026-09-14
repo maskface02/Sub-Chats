@@ -1,0 +1,5 @@
+-- Migration 0001 — intentionally a no-op.
+-- phase-4 soft-delete columns (conversations.deleted_at, conversations.deleted_batch_id)
+-- and the live-only partial index (conversations_user_updated_live_idx) are already
+-- included in 0000_init.sql; this file preserves the spec'd two-file chain shape
+-- (phase-5.md §5 / US-501 AC.2). No DDL is executed.

@@ -492,11 +492,26 @@ curl -X DELETE http://localhost:3000/api/providers/<id> -b cookies.txt
 
 ### `GET /api/health`
 
-Provider status for ops, DevOps, and the "no AI provider configured" banner.
+Liveness + dependency check for ops, DevOps, and the "no AI provider configured" banner. Anonymous-accessible, never rate-limited.
 
-| Auth | Success |
-|---|---|
-| none | `200 HealthResponse` |
+**Production shape** (phase 5 — non-revealing):
+
+| Auth | Success | Errors |
+|---|---|---|
+| none | `200 HealthResponse` (all checks pass) · `503` (degraded) | — |
+
+```ts
+{
+  status: "ok" | "degraded";
+  dbReachable: boolean;        // the configured database answers a trivial query
+  providerResolved: boolean;   // an AI provider resolves (caller's default, else the env chain)
+  migrationsApplied: boolean;  // the drizzle-kit migration chain is fully applied
+}
+```
+
+- `200` when `status: "ok"` (all three checks pass); `503` with `status: "degraded"` otherwise — post-deploy verification is `curl -sf https://<app>/api/health`.
+- **Non-revealing rule:** the prod body contains booleans only — no provider names, model ids, base URLs, or connection details. Anything more specific belongs in server logs, not a public endpoint.
+- **Local dev** keeps the richer shape below (it drives the sign-in banner):
 
 ```ts
 {
@@ -505,7 +520,7 @@ Provider status for ops, DevOps, and the "no AI provider configured" banner.
     type: "openai" | "anthropic" | "ollama" | null,
     model: string | null,
     baseUrl: string | null,
-    // phase 3: resolution for the CURRENT session's user (null when unauthenticated)
+    // resolution for the CURRENT session's user (null when unauthenticated)
     source: "user" | "env" | null,
   };
   ollamaReachable: boolean;
@@ -518,10 +533,13 @@ curl http://localhost:3000/api/health
 
 ## See also
 
-- Architecture → [architecture.md](../architecture.md)
+- Architecture → [architecture.md](../architecture.md) (production topology → [Production topology](../architecture.md#production-topology-phase-5))
 - Local setup → [getting-started.md](../getting-started.md)
+- Deploy runbook → [deploy.md](../deploy.md)
+- Release notes → [RELEASE_NOTES.md](../../RELEASE_NOTES.md)
 - Phase 1 spec → `.orchestrator/specs/phase-1.md`
 - Phase 2 spec → `.orchestrator/specs/phase-2.md`
 - Phase 3 spec → `.orchestrator/specs/phase-3.md`
+- Phase 5 spec → `.orchestrator/specs/phase-5.md`
 - Phase 2 handoff → `.orchestrator/handoffs/tech-writer-phase-2.md`
 - Phase 0 API handoff → `.orchestrator/handoffs/api-phase-0.md`

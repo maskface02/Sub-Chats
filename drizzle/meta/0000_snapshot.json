@@ -1,198 +1,643 @@
 {
-  "version": "6",
-  "dialect": "sqlite",
-  "id": "00000000-0000-0000-0000-000000000001",
+  "id": "efac7ebc-9b35-4131-948a-ef6f0b801d5e",
   "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
   "tables": {
-    "users": {
-      "name": "users",
-      "columns": {
-        "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
-        "email": { "name": "email", "type": "text", "notNull": true },
-        "emailVerified": { "name": "emailVerified", "type": "integer" },
-        "name": { "name": "name", "type": "text" },
-        "image": { "name": "image", "type": "text" },
-        "passwordHash": { "name": "passwordHash", "type": "text" },
-        "createdAt": { "name": "createdAt", "type": "integer", "notNull": true },
-        "updatedAt": { "name": "updatedAt", "type": "integer", "notNull": true }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {}
-    },
-    "accounts": {
+    "public.accounts": {
       "name": "accounts",
+      "schema": "",
       "columns": {
-        "userId": { "name": "userId", "type": "text", "notNull": true },
-        "type": { "name": "type", "type": "text", "notNull": true },
-        "provider": { "name": "provider", "type": "text", "notNull": true },
-        "providerAccountId": { "name": "providerAccountId", "type": "text", "notNull": true },
-        "refresh_token": { "name": "refresh_token", "type": "text" },
-        "access_token": { "name": "access_token", "type": "text" },
-        "expires_at": { "name": "expires_at", "type": "integer" },
-        "token_type": { "name": "token_type", "type": "text" },
-        "scope": { "name": "scope", "type": "text" },
-        "id_token": { "name": "id_token", "type": "text" },
-        "session_state": { "name": "session_state", "type": "text" }
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_account_id": {
+          "name": "provider_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_type": {
+          "name": "token_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_state": {
+          "name": "session_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
       },
       "indexes": {},
       "foreignKeys": {
-        "accounts_userId_users_id_fk": {
-          "name": "accounts_userId_users_id_fk",
-          "tableFrom": ["accounts"],
-          "tableTo": ["users"],
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
+        "accounts_user_id_users_id_fk": {
+          "name": "accounts_user_id_users_id_fk",
+          "tableFrom": "accounts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "accounts_provider_providerAccountId_pk": {
-          "name": "accounts_provider_providerAccountId_pk",
-          "columns": ["provider", "providerAccountId"]
+        "accounts_provider_provider_account_id_pk": {
+          "name": "accounts_provider_provider_account_id_pk",
+          "columns": [
+            "provider",
+            "provider_account_id"
+          ]
         }
-      }
-    },
-    "sessions": {
-      "name": "sessions",
-      "columns": {
-        "sessionToken": { "name": "sessionToken", "type": "text", "primaryKey": true, "notNull": true },
-        "userId": { "name": "userId", "type": "text", "notNull": true },
-        "expires": { "name": "expires", "type": "integer", "notNull": true }
       },
-      "indexes": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.conversations": {
+      "name": "conversations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'New chat'"
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "root_conversation_id": {
+          "name": "root_conversation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "depth": {
+          "name": "depth",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "highlight_text": {
+          "name": "highlight_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "highlight_context": {
+          "name": "highlight_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_batch_id": {
+          "name": "deleted_batch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "conversations_user_updated_live_idx": {
+          "name": "conversations_user_updated_live_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "deleted_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conversations_parent_idx": {
+          "name": "conversations_parent_idx",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conversations_root_idx": {
+          "name": "conversations_root_idx",
+          "columns": [
+            {
+              "expression": "root_conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conversations_deleted_batch_idx": {
+          "name": "conversations_deleted_batch_idx",
+          "columns": [
+            {
+              "expression": "deleted_batch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "sessions_userId_users_id_fk": {
-          "name": "sessions_userId_users_id_fk",
-          "tableFrom": ["sessions"],
-          "tableTo": ["users"],
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
+        "conversations_user_id_users_id_fk": {
+          "name": "conversations_user_id_users_id_fk",
+          "tableFrom": "conversations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "conversations_parent_id_conversations_id_fk": {
+          "name": "conversations_parent_id_conversations_id_fk",
+          "tableFrom": "conversations",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "conversations_root_conversation_id_conversations_id_fk": {
+          "name": "conversations_root_conversation_id_conversations_id_fk",
+          "tableFrom": "conversations",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "root_conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {}
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     },
-    "verification_tokens": {
-      "name": "verification_tokens",
+    "public.messages": {
+      "name": "messages",
+      "schema": "",
       "columns": {
-        "identifier": { "name": "identifier", "type": "text", "notNull": true },
-        "token": { "name": "token", "type": "text", "notNull": true },
-        "expires": { "name": "expires", "type": "integer", "notNull": true }
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "messages_conversation_created_idx": {
+          "name": "messages_conversation_created_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "messages_conversation_id_conversations_id_fk": {
+          "name": "messages_conversation_id_conversations_id_fk",
+          "tableFrom": "messages",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.providers": {
+      "name": "providers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_url": {
+          "name": "base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "api_key_ciphertext": {
+          "name": "api_key_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_model": {
+          "name": "default_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "providers_user_id_users_id_fk": {
+          "name": "providers_user_id_users_id_fk",
+          "tableFrom": "providers",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sessions": {
+      "name": "sessions",
+      "schema": "",
+      "columns": {
+        "session_token": {
+          "name": "session_token",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires": {
+          "name": "expires",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_email_unique": {
+          "name": "users_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.verification_tokens": {
+      "name": "verification_tokens",
+      "schema": "",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires": {
+          "name": "expires",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "verification_tokens_identifier_token_pk": {
           "name": "verification_tokens_identifier_token_pk",
-          "columns": ["identifier", "token"]
-        }
-      }
-    },
-    "conversations": {
-      "name": "conversations",
-      "columns": {
-        "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
-        "userId": { "name": "userId", "type": "text", "notNull": true },
-        "title": { "name": "title", "type": "text", "notNull": true, "default": "New chat" },
-        "parentId": { "name": "parentId", "type": "text" },
-        "rootConversationId": { "name": "rootConversationId", "type": "text", "notNull": true },
-        "depth": { "name": "depth", "type": "integer", "notNull": true, "default": 0 },
-        "highlightText": { "name": "highlightText", "type": "text" },
-        "highlightContext": { "name": "highlightContext", "type": "text" },
-        "createdAt": { "name": "createdAt", "type": "integer", "notNull": true },
-        "updatedAt": { "name": "updatedAt", "type": "integer", "notNull": true }
-      },
-      "indexes": {
-        "conversations_user_updated_idx": {
-          "name": "conversations_user_updated_idx",
-          "columns": ["userId", "updatedAt"],
-          "isUnique": false
-        },
-        "conversations_parent_idx": {
-          "name": "conversations_parent_idx",
-          "columns": ["parentId"],
-          "isUnique": false
-        },
-        "conversations_root_idx": {
-          "name": "conversations_root_idx",
-          "columns": ["rootConversationId"],
-          "isUnique": false
+          "columns": [
+            "identifier",
+            "token"
+          ]
         }
       },
-      "foreignKeys": {
-        "conversations_userId_users_id_fk": {
-          "name": "conversations_userId_users_id_fk",
-          "tableFrom": ["conversations"],
-          "tableTo": ["users"],
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {}
-    },
-    "messages": {
-      "name": "messages",
-      "columns": {
-        "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
-        "conversationId": { "name": "conversationId", "type": "text", "notNull": true },
-        "role": { "name": "role", "type": "text", "notNull": true },
-        "content": { "name": "content", "type": "text", "notNull": true },
-        "model": { "name": "model", "type": "text" },
-        "providerId": { "name": "providerId", "type": "text" },
-        "createdAt": { "name": "createdAt", "type": "integer", "notNull": true }
-      },
-      "indexes": {
-        "messages_conversation_created_idx": {
-          "name": "messages_conversation_created_idx",
-          "columns": ["conversationId", "createdAt"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "messages_conversationId_conversations_id_fk": {
-          "name": "messages_conversationId_conversations_id_fk",
-          "tableFrom": ["messages"],
-          "tableTo": ["conversations"],
-          "columnsFrom": ["conversationId"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {}
-    },
-    "providers": {
-      "name": "providers",
-      "columns": {
-        "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
-        "userId": { "name": "userId", "type": "text", "notNull": true },
-        "type": { "name": "type", "type": "text", "notNull": true },
-        "baseUrl": { "name": "baseUrl", "type": "text" },
-        "apiKeyCiphertext": { "name": "apiKeyCiphertext", "type": "text" },
-        "defaultModel": { "name": "defaultModel", "type": "text" },
-        "isDefault": { "name": "isDefault", "type": "integer", "notNull": true, "default": 0 },
-        "createdAt": { "name": "createdAt", "type": "integer", "notNull": true }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "providers_userId_users_id_fk": {
-          "name": "providers_userId_users_id_fk",
-          "tableFrom": ["providers"],
-          "tableTo": ["users"],
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {}
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {},
-  "_meta": { "schemas": {}, "tables": {}, "columns": {} }
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
 }

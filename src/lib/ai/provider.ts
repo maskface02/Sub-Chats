@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { providers } from "@/lib/db/schema";
 import { decrypt } from "@/lib/crypto/encrypt";
 import { assertSendTimeAllowed, SsrfBlockedError, ssrfSafeFetch } from "./ssrf-guard";
+import { allowOllamaUsers } from "@/lib/config/flags";
 import { log } from "@/lib/log";
 
 export type ProviderType = "openai" | "anthropic" | "ollama" | "custom";
@@ -198,6 +199,17 @@ export async function getActiveProviderFor(
     .limit(1);
   const row = rows[0] as ProviderRowLike | undefined;
   if (!row) return resolveFromEnv();
+
+  // US-509 AC.17: user ollama rows are gated behind the admin flag (default
+  // false — a user-chosen ollama baseUrl is an SSRF/exfil surface). custom
+  // rows are unaffected; env-chain ollama is unaffected.
+  if (row.type === "ollama" && !allowOllamaUsers()) {
+    log.warn(
+      { userId, providerId: row.id },
+      "user ollama provider blocked (ADMIN_ALLOW_OLLAMA_USERS=false); falling back to env chain",
+    );
+    return resolveFromEnv();
+  }
 
   try {
     if (row.type === "ollama" || row.type === "custom") {
