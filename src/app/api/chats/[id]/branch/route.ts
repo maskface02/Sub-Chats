@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
@@ -66,7 +66,15 @@ export async function POST(
   const convRows = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)))
+    .where(
+      and(
+        eq(conversations.id, id),
+        eq(conversations.userId, userId),
+        // Branching a deleted conversation → 404 (US-401 AC.5): otherwise the
+        // new sub-chat would point parentId at a soft-deleted row.
+        isNull(conversations.deletedAt),
+      ),
+    )
     .limit(1);
   if (convRows.length === 0) {
     return jsonError(404, "NOT_FOUND", "Conversation not found");

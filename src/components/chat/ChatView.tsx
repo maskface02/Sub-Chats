@@ -1,13 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
 import { SelectionMenu } from "./SelectionMenu";
 import { ParentContextBanner } from "./ParentContextBanner";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 import { SplitPicker } from "@/components/split/SplitPicker";
+import {
+  DeleteChatDialog,
+  DeleteChatMenuItem,
+} from "./DeleteChatButton";
+import { ExportMenuItems } from "./ExportMenu";
+import { ShortcutOverlay } from "./ShortcutOverlay";
+import { showToast } from "./toast";
+import type { EditSaveResult } from "./EditMessage";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import { useSplit } from "@/lib/state/split";
+import { invalidateTree } from "@/components/tree/useConversationTree";
+import { createChatAction } from "@/lib/api-client/auth";
+import { editMessage, regenerateMessage } from "@/lib/api-client/messages";
 import type { Conversation, Message } from "@/lib/api-client/types";
 import { Button } from "@/components/ui/button";
 
@@ -33,7 +47,21 @@ type Status =
   | { kind: "streaming" }
   | { kind: "error"; message: string };
 
+type StreamResult =
+  | { kind: "completed" }
+  | { kind: "aborted" }
+  | {
+      kind: "immediate-failure";
+      code: string;
+      message: string;
+      fieldError?: string;
+    };
+
 const STREAM_HEADER = "x-vercel-ai-data-stream";
+
+const MENU_ITEM_CLASS =
+  "flex cursor-pointer select-none items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50";
+const MENU_SEPARATOR_CLASS = "my-1 h-px bg-border";
 
 function makeId(prefix: string): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -44,10 +72,15 @@ function makeId(prefix: string): string {
 
 export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewProps) {
   const split = useSplit();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(conversation.messages);
   const [streaming, setStreaming] = useState<string>("");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /** Ephemeral "Stopped" chip state (US-405 AC.3) — in-memory only. */
+  const [stoppedIds, setStoppedIds] = useState<ReadonlySet<string>>(() => new Set());
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamingIdRef = useRef<string>("");
@@ -79,12 +112,14 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
     ? buildHighlightPlaceholder(conversation.highlightText)
     : undefined;
 
-  const streamOnce = useCallback(
+  const runStream = useCallback(
     async (opts: {
-      content: string;
-      clientMessageId: string;
-      isRetry: boolean;
-    }): Promise<"started" | "immediate-failure" | "aborted"> => {
+      /** Initiates the SSE request (send / edit / regenerate). */
+      start: (signal: AbortSignal) => Promise<Response>;
+      isRetry?: boolean;
+      /** Fires once the SSE stream is confirmed to have started. */
+      onStarted?: () => void;
+    }): Promise<StreamResult> => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -95,42 +130,28 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       let streamFinished = false;
 
       try {
-        const res = await fetch(
-          `/api/chats/${encodeURIComponent(conversation.id)}/messages`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              content: opts.content,
-              clientMessageId: opts.clientMessageId,
-            }),
-            signal: controller.signal,
-          },
-        );
+        const res = await opts.start(controller.signal);
 
         if (!res.ok) {
           const errBody = await safeJson(res);
-          const code =
-            (errBody &&
-            typeof errBody === "object" &&
-            "error" in errBody
-              ? (errBody as { error?: { code?: string; message?: string } })
-                  .error?.code
-              : null) ?? "HTTP_ERROR";
-          const message =
-            (errBody &&
-            typeof errBody === "object" &&
-            "error" in errBody
-              ? (errBody as { error?: { message?: string } }).error?.message
-              : null) ?? friendlyMessageForCode(code, res.status);
-          setStatus({ kind: "error", message });
-          return "immediate-failure";
+          const err = extractError(errBody);
+          return {
+            kind: "immediate-failure",
+            code: err.code,
+            message: err.message ?? friendlyMessageForCode(err.code, res.status),
+            fieldError: err.fields?.content,
+          };
         }
 
         if (!res.body) {
-          setStatus({ kind: "error", message: "Empty response from server" });
-          return "immediate-failure";
+          return {
+            kind: "immediate-failure",
+            code: "HTTP_ERROR",
+            message: "Empty response from server",
+          };
         }
+
+        opts.onStarted?.();
 
         const isDataStream =
           (res.headers.get("content-type") ?? "").includes("text/plain") ||
@@ -167,15 +188,27 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         ]);
         setStreaming("");
         setStatus({ kind: "idle" });
-        return "started";
+        return { kind: "completed" };
       } catch (err) {
         if (controller.signal.aborted) {
+          // Intentional abort (US-405): partial content persists with the
+          // ephemeral "Stopped" chip — never the phase-0 error banner.
           if (accumulated && !opts.isRetry) {
-            appendAssistant(accumulated, setMessages);
+            const partialId = streamingIdRef.current || makeId("a");
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: partialId,
+                role: "assistant",
+                content: accumulated,
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+            setStoppedIds((prev) => new Set(prev).add(partialId));
           }
           setStreaming("");
           setStatus({ kind: "idle" });
-          return "aborted";
+          return { kind: "aborted" };
         }
         if (accumulated && !opts.isRetry) {
           appendAssistant(accumulated, setMessages);
@@ -186,7 +219,11 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
             : "AI stopped responding — try again";
         setStreaming("");
         setStatus({ kind: "error", message });
-        return "immediate-failure";
+        return {
+          kind: "immediate-failure",
+          code: "STREAM_FAILED",
+          message,
+        };
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
       }
@@ -206,29 +243,209 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMessage]);
-      const result = await streamOnce({
-        content: trimmed,
-        clientMessageId: userMsgId,
-        isRetry: false,
+      const result = await runStream({
+        start: (signal) =>
+          fetch(`/api/chats/${encodeURIComponent(conversation.id)}/messages`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              content: trimmed,
+              clientMessageId: userMsgId,
+            }),
+            signal,
+          }),
       });
-      if (result === "immediate-failure") {
+      if (result.kind === "immediate-failure") {
         // The optimistic user message never reached the DB — drop it.
         setMessages((prev) => prev.filter((m) => m.id !== userMsgId));
       }
     },
-    [streamOnce],
+    [conversation.id, runStream],
   );
 
   const retry = useCallback(() => {
     if (!lastUserMessage) return;
-    void streamOnce({
-      content: lastUserMessage.content,
-      clientMessageId: lastUserMessage.id,
+    void runStream({
+      start: (signal) =>
+        fetch(`/api/chats/${encodeURIComponent(conversation.id)}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            content: lastUserMessage.content,
+            clientMessageId: lastUserMessage.id,
+          }),
+          signal,
+        }),
       isRetry: true,
     });
-  }, [lastUserMessage, streamOnce]);
+  }, [conversation.id, lastUserMessage, runStream]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  // US-407: save truncates the local tail immediately, then the SSE response
+  // replaces it. Resolves at stream start so the edit UI closes; pre-stream
+  // rejections restore the original tail and surface inline/toast errors.
+  const handleEditSave = useCallback(
+    (messageId: string, content: string): Promise<EditSaveResult> => {
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) {
+        showToast({ message: "Message not found", role: "alert" });
+        return Promise.resolve({ ok: false, error: "Message not found" });
+      }
+      const original = messages;
+      const target = messages[idx]!;
+      const pruned: Message[] = [
+        ...messages.slice(0, idx),
+        { ...target, content },
+      ];
+      setMessages(pruned);
+
+      let started = false;
+      return new Promise((resolve) => {
+        void runStream({
+          start: (signal) =>
+            editMessage(conversation.id, messageId, content, signal),
+          onStarted: () => {
+            started = true;
+            resolve({ ok: true });
+          },
+        }).then((result) => {
+          if (result.kind !== "immediate-failure" || started) return;
+          // Pre-stream rejection. Provider failures (502/503) mean the edit
+          // already committed — keep the truncated tail and let the banner
+          // + Retry take over (US-407 AC.7).
+          const committedFailure =
+            result.code === "NO_PROVIDER" ||
+            result.code === "PROVIDER_FAILED" ||
+            result.code === "STREAM_FAILED";
+          if (!committedFailure) setMessages(original);
+          if (
+            result.code === "INVALID_INPUT" ||
+            result.code === "NOT_EDITABLE"
+          ) {
+            resolve({
+              ok: false,
+              error: result.fieldError ?? result.message,
+            });
+          } else if (result.code === "NOT_FOUND") {
+            showToast({ message: "Message not found", role: "alert" });
+            resolve({ ok: false, error: result.message });
+          } else if (result.code === "STREAM_ACTIVE") {
+            showToast({
+              message: "Stop the current response first",
+              role: "alert",
+            });
+            resolve({ ok: false, error: result.message });
+          } else if (result.code === "RATE_LIMITED") {
+            showToast({
+              message: "Too many actions — try again in a moment",
+              role: "alert",
+            });
+            resolve({ ok: false, error: result.message });
+          } else {
+            resolve({ ok: true });
+          }
+        });
+      });
+    },
+    [messages, conversation.id, runStream],
+  );
+
+  // US-408: confirm-free regenerate of the last assistant message.
+  const handleRegenerate = useCallback(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    const original = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== last.id));
+    void runStream({
+      start: (signal) => regenerateMessage(conversation.id, last.id, signal),
+    }).then((result) => {
+      if (result.kind !== "immediate-failure") return;
+      setMessages(original);
+      if (result.code === "NOT_FOUND") {
+        showToast({ message: "Message not found", role: "alert" });
+      } else if (result.code === "STREAM_ACTIVE") {
+        showToast({ message: "Stop the current response first", role: "alert" });
+      } else if (result.code === "RATE_LIMITED") {
+        showToast({
+          message: "Too many actions — try again in a moment",
+          role: "alert",
+        });
+      } else if (result.code === "NOT_REGENERABLE") {
+        showToast({
+          message: "Only the latest response can be regenerated",
+          role: "alert",
+        });
+      }
+    });
+  }, [messages, conversation.id, runStream]);
+
+  // US-402 AC.3: on delete, prune the tree and leave the deleted view.
+  const handleDeleted = useCallback(
+    (result: { deletedIds: string[] }) => {
+      invalidateTree();
+      if (result.deletedIds.includes(conversation.id)) {
+        router.push(
+          conversation.parentId
+            ? `/c/${encodeURIComponent(conversation.parentId)}`
+            : "/",
+        );
+      } else {
+        router.refresh();
+      }
+    },
+    [conversation.id, conversation.parentId, router],
+  );
+
+  // US-409 AC.4: the split shortcut reuses the split store actions.
+  const handleToggleSplit = useCallback(() => {
+    if (split.splitOpen) {
+      split.closeSplit();
+      return;
+    }
+    if (!conversation.parentId) {
+      showToast({ message: "This chat has no parent", role: "status" });
+      return;
+    }
+    split.openSplit(conversation.id, conversation.parentId);
+  }, [split, conversation.id, conversation.parentId]);
+
+  const handleEscapePane = useCallback(
+    (paneIndex: 1 | 2): boolean => {
+      if (!split.splitOpen) return false;
+      if (paneIndex === 2) {
+        split.closeSplit();
+        return true;
+      }
+      const secondary = split.secondaryId;
+      split.closeSplit();
+      if (secondary) router.push(`/c/${encodeURIComponent(secondary)}`);
+      return true;
+    },
+    [split, router],
+  );
 
   const isBusy = status.kind === "sending" || status.kind === "streaming";
+
+  // Exactly one instance owns the global shortcuts: the standalone view, or
+  // pane 1 while split view is open.
+  const isPrimaryPane = !pane || pane.index === 1;
+  const [pendingNewChat, startNewChatTransition] = useTransition();
+
+  useShortcuts(
+    {
+      onNewChat: () => {
+        if (pendingNewChat) return; // dedupe while in flight (US-409 AC.3)
+        startNewChatTransition(() => createChatAction());
+      },
+      onToggleSplit: handleToggleSplit,
+      onShowShortcuts: () => setShortcutsOpen(true),
+      onEscapePane: isPrimaryPane ? handleEscapePane : undefined,
+    },
+    isPrimaryPane,
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -236,7 +453,7 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         items={breadcrumbOverride ?? buildBreadcrumb(conversation)}
       />
 
-      <header className="flex h-14 items-center justify-between border-b bg-background px-4">
+      <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-4">
         <h1
           ref={headerRef}
           tabIndex={-1}
@@ -271,6 +488,49 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
               conversation={conversation}
               onPick={(id) => split.openSplit(conversation.id, id)}
             />
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label="Conversation menu"
+                  aria-haspopup="menu"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                    fill="currentColor"
+                  >
+                    <circle cx="8" cy="3" r="1.4" />
+                    <circle cx="8" cy="8" r="1.4" />
+                    <circle cx="8" cy="13" r="1.4" />
+                  </svg>
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={6}
+                  className="z-50 min-w-[12rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                >
+                  <ExportMenuItems conversationId={conversation.id} />
+                  <DropdownMenu.Separator className={MENU_SEPARATOR_CLASS} />
+                  <DeleteChatMenuItem onSelect={() => setDeleteOpen(true)} />
+                  <DropdownMenu.Separator className={MENU_SEPARATOR_CLASS} />
+                  <DropdownMenu.Item
+                    className={MENU_ITEM_CLASS}
+                    onSelect={() => setShortcutsOpen(true)}
+                  >
+                    Keyboard shortcuts
+                    <kbd className="ml-auto rounded border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
+                      ?
+                    </kbd>
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </>
         ) : null}
       </header>
@@ -296,6 +556,10 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
           messages={messages}
           streamingContent={status.kind === "streaming" ? streaming : null}
           streamingId={streamingIdRef.current}
+          stoppedIds={stoppedIds}
+          busy={isBusy}
+          onEditSave={handleEditSave}
+          onRegenerate={handleRegenerate}
         />
       </div>
 
@@ -324,6 +588,8 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       <Composer
         onSend={(c) => void send(c)}
         disabled={isBusy}
+        streaming={isBusy}
+        onStop={handleStop}
         statusLabel={
           status.kind === "sending"
             ? "Sending…"
@@ -335,6 +601,21 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       />
 
       <SelectionMenu conversationId={conversation.id} paneIndex={pane?.index} />
+
+      {isPrimaryPane ? (
+        <>
+          <DeleteChatDialog
+            conversation={conversation}
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            onDeleted={handleDeleted}
+          />
+          <ShortcutOverlay
+            open={shortcutsOpen}
+            onOpenChange={setShortcutsOpen}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -411,6 +692,26 @@ function appendAssistant(
       createdAt: new Date().toISOString(),
     },
   ]);
+}
+
+function extractError(body: unknown): {
+  code: string;
+  message: string | null;
+  fields?: Record<string, string>;
+} {
+  if (body && typeof body === "object" && "error" in body) {
+    const e = (
+      body as {
+        error?: { code?: string; message?: string; fields?: Record<string, string> };
+      }
+    ).error;
+    return {
+      code: e?.code ?? "HTTP_ERROR",
+      message: e?.message ?? null,
+      fields: e?.fields,
+    };
+  }
+  return { code: "HTTP_ERROR", message: null };
 }
 
 async function safeJson(res: Response): Promise<unknown> {

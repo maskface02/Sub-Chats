@@ -1,11 +1,41 @@
 import { type NextRequest } from "next/server";
-import { and, eq, asc, inArray } from "drizzle-orm";
+import { and, eq, asc, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
+import { checkMutationRateLimit } from "@/lib/auth/rate-limit";
 import { jsonError, jsonRaw } from "@/lib/types/api";
+import { isStreamActive } from "@/lib/ai/stream";
+import { log } from "@/lib/log";
 
 export const runtime = "nodejs";
+
+/** Collect the live subtree rooted at targetId (target + live descendants). */
+export function collectLiveSubtreeIds(
+  rows: Array<{ id: string; parentId: string | null; deletedAt: Date | null }>,
+  targetId: string,
+): string[] {
+  const childrenOf = new Map<string, string[]>();
+  for (const r of rows) {
+    if (r.deletedAt !== null || !r.parentId) continue;
+    const list = childrenOf.get(r.parentId) ?? [];
+    list.push(r.id);
+    childrenOf.set(r.parentId, list);
+  }
+  const ids: string[] = [];
+  if (rows.some((r) => r.id === targetId && r.deletedAt === null)) {
+    ids.push(targetId);
+  }
+  const stack = [targetId];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    for (const child of childrenOf.get(cur) ?? []) {
+      ids.push(child);
+      stack.push(child);
+    }
+  }
+  return ids;
+}
 
 export async function GET(
   _req: NextRequest,
@@ -22,7 +52,12 @@ export async function GET(
     .select()
     .from(conversations)
     .where(
-      and(eq(conversations.id, id), eq(conversations.userId, userId)),
+      and(
+        eq(conversations.id, id),
+        eq(conversations.userId, userId),
+        // Soft-deleted ids behave exactly like missing ids (US-401 AC.5).
+        isNull(conversations.deletedAt),
+      ),
     )
     .limit(1);
 
@@ -58,6 +93,7 @@ export async function GET(
         and(
           inArray(conversations.id, lookupIds),
           eq(conversations.userId, userId),
+          isNull(conversations.deletedAt),
         ),
       );
     for (const r of titleRows) titleLookup.set(r.id, r.title);
@@ -85,6 +121,7 @@ export async function GET(
         and(
           eq(conversations.id, cursorId),
           eq(conversations.userId, userId),
+          isNull(conversations.deletedAt),
         ),
       )
       .limit(1);
@@ -123,4 +160,162 @@ export async function GET(
     },
     200,
   );
+}
+
+// ---------- delete / restore (phase 4 US-401) ----------
+
+export async function DELETE(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return jsonError(401, "UNAUTHENTICATED", "Sign in required");
+  }
+  const userId = session.user.id;
+  const { id } = await ctx.params;
+
+  const rl = checkMutationRateLimit(userId);
+  if (!rl.allowed) {
+    const minutes = Math.max(1, Math.ceil(rl.retryAfterMs / 60_000));
+    const res = jsonError(
+      429,
+      "RATE_LIMITED",
+      `Too many actions — try again in ${minutes} minute${minutes === 1 ? "" : "s"}`,
+    );
+    res.headers.set(
+      "Retry-After",
+      Math.ceil(rl.retryAfterMs / 1000).toString(),
+    );
+    res.headers.set("X-RateLimit-Limit", "30");
+    res.headers.set("X-RateLimit-Remaining", "0");
+    res.headers.set(
+      "X-RateLimit-Reset",
+      new Date(Date.now() + rl.retryAfterMs).toISOString(),
+    );
+    return res;
+  }
+
+  const convRows = await db
+    .select()
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.id, id),
+        eq(conversations.userId, userId),
+        isNull(conversations.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (convRows.length === 0) {
+    // Byte-identical 404 for missing, foreign, AND soft-deleted ids.
+    return jsonError(404, "NOT_FOUND", "Conversation not found");
+  }
+  const target = convRows[0]!;
+
+  // Scope the subtree to this tree; only LIVE conversations join the cascade
+  // (live-only filter at collection time — separately deleted descendants keep
+  // their original batch, see nested-delete batch integrity).
+  const treeRows = await db
+    .select({
+      id: conversations.id,
+      parentId: conversations.parentId,
+      deletedAt: conversations.deletedAt,
+    })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.userId, userId),
+        eq(conversations.rootConversationId, target.rootConversationId),
+      ),
+    );
+
+  const subtreeIds = collectLiveSubtreeIds(treeRows, target.id);
+
+  // 409 if the target OR any live descendant is streaming (cascade would move
+  // messages out from under a live stream).
+  if (subtreeIds.some((cid) => isStreamActive(cid))) {
+    return jsonError(
+      409,
+      "STREAM_ACTIVE",
+      "Stop the current response before deleting",
+    );
+  }
+
+  const batchId = crypto.randomUUID();
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(conversations)
+        .set({ deletedAt: new Date(), deletedBatchId: batchId })
+        .where(
+          and(
+            inArray(conversations.id, subtreeIds),
+            eq(conversations.userId, userId),
+            // Live-only: never overwrite another batch's deletedBatchId.
+            isNull(conversations.deletedAt),
+          ),
+        );
+    });
+  } catch (err) {
+    log.error({ err, userId, rootId: target.rootConversationId }, "delete transaction failed");
+    // Basket rolled back, nothing soft-deleted. Keep the bucket —
+    // a failed delete is still a rate-bounded user action.
+    return jsonError(500, "INTERNAL", "Could not delete conversation");
+  }
+
+  return jsonRaw(
+    { deletedIds: subtreeIds, deletedCount: subtreeIds.length, batchId },
+    200,
+  );
+}
+
+export async function POST(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return jsonError(401, "UNAUTHENTICATED", "Sign in required");
+  }
+  const userId = session.user.id;
+  const { id } = await ctx.params;
+
+  const rl = checkMutationRateLimit(userId);
+  if (!rl.allowed) {
+    return jsonError(429, "RATE_LIMITED", "Too many actions — try again later");
+  }
+
+  const convRows = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)))
+    .limit(1);
+  if (convRows.length === 0) {
+    return jsonError(404, "NOT_FOUND", "Conversation not found");
+  }
+  const target = convRows[0]!;
+
+  if (target.deletedAt === null) {
+    return jsonRaw({ restoredCount: 0 }, 200);
+  }
+
+  // Restore replays the target row's OWN batch (Reviewer fix, OQ-5): only
+  // rows soft-deleted by the same logical delete come back.
+  try {
+    const results = await db
+      .update(conversations)
+      .set({ deletedAt: null, deletedBatchId: null })
+      .where(
+        and(
+          eq(conversations.deletedBatchId, target.deletedBatchId!),
+          eq(conversations.userId, userId),
+        ),
+      )
+      .returning({ id: conversations.id });
+    return jsonRaw({ restoredCount: results.length }, 200);
+  } catch (err) {
+    log.error({ err, userId, id }, "restore failed");
+    return jsonError(500, "INTERNAL", "Could not restore conversation");
+  }
 }

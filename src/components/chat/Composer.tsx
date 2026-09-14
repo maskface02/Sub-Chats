@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { StopButton } from "./StopButton";
 import { cn } from "@/lib/utils";
 
 export interface ComposerProps {
@@ -10,6 +11,9 @@ export interface ComposerProps {
   statusLabel?: string | null;
   className?: string;
   placeholder?: string;
+  /** While in flight the send button is replaced by Stop (US-405 AC.1). */
+  streaming?: boolean;
+  onStop?: () => void;
 }
 
 const MAX_LENGTH = 8000;
@@ -20,6 +24,8 @@ export function Composer({
   statusLabel = null,
   className,
   placeholder,
+  streaming = false,
+  onStop,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -49,6 +55,12 @@ export function Composer({
     }
   };
 
+  // US-405 AC.5: after stop, focus returns to the composer textarea.
+  const handleStop = () => {
+    onStop?.();
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
+
   return (
     <form
       onSubmit={submit}
@@ -72,15 +84,19 @@ export function Composer({
             aria-label="Message input"
             className="flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!canSend}
-            aria-label="Send message"
-            className="shrink-0"
-          >
-            Send
-          </Button>
+          {streaming && onStop ? (
+            <StopButton onStop={handleStop} />
+          ) : (
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!canSend}
+              aria-label="Send message"
+              className="shrink-0"
+            >
+              Send
+            </Button>
+          )}
         </div>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{statusLabel ?? "Press Enter to send, Shift+Enter for newline."}</span>

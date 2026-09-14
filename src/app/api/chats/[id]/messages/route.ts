@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import {
   jsonError,
@@ -57,7 +57,14 @@ export async function POST(
   const convRows = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)))
+    .where(
+      and(
+        eq(conversations.id, id),
+        eq(conversations.userId, userId),
+        // Soft-deleted ids behave exactly like missing ids (US-401 AC.5).
+        isNull(conversations.deletedAt),
+      ),
+    )
     .limit(1);
   if (convRows.length === 0) {
     return jsonError(404, "NOT_FOUND", "Conversation not found");

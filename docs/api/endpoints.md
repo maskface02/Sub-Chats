@@ -30,6 +30,9 @@ type ApiError = {
 | `EMAIL_TAKEN` | 409 | Signup email already registered |
 | `RATE_LIMITED` | 429 | Hit per-user / per-IP bucket |
 | `NOT_FOUND` | 404 | Resource missing OR cross-user access |
+| `STREAM_ACTIVE` | 409 | A stream is in flight on the conversation |
+| `NOT_EDITABLE` | 422 | Edit target is not a user message |
+| `NOT_REGENERABLE` | 422 | Regenerate target is not the last assistant message |
 | `INVALID_SELECTION` | 422 | Branch request had a bad selection range |
 | `ANCESTOR_UNAVAILABLE` | 503 | A sub-chat's parent chain is broken |
 | `NO_PROVIDER` | 503 | No AI provider configured |
@@ -295,6 +298,111 @@ curl http://localhost:3000/api/chats/<id>/tree -b cookies.txt
   "totalNodes": 2,
   "truncated": false
 }
+```
+
+## Conversation lifecycle endpoints *(phase 4, new)*
+
+> **Soft-delete parity (normative):** a soft-deleted conversation returns `404 NOT_FOUND` — byte-identically to a missing id — on **every** route below *and* on all existing chat routes (list, get, tree, messages, branch). Deleted ids are never distinguishable from missing ones.
+
+### `DELETE /api/chats/:id` *(phase 4, new)*
+
+Soft-delete a conversation **and its whole subtree** in one transaction. Rows are never hard-deleted; each affected row gets `deletedAt = now()` and a fresh `deletedBatchId`.
+
+| Auth | Body | Success | Errors |
+|---|---|---|---|
+| session + owner | none | `200 { deletedIds, deletedCount }` | `401 UNAUTHENTICATED`, `404 NOT_FOUND`, `409 STREAM_ACTIVE`, `429 RATE_LIMITED`, `500 INTERNAL` |
+
+`deletedIds` lists every soft-deleted conversation id (the undo client replays exactly these); `deletedCount === deletedIds.length`. `409 STREAM_ACTIVE` fires when a stream is active on the target **or any descendant in the cascade set** — nothing is deleted in that case.
+
+Rate limit: **30 requests / 10 min / user** (delete + restore share one bucket) → `429 RATE_LIMITED` with `Retry-After` and `X-RateLimit-*` headers.
+
+```bash
+curl -X DELETE http://localhost:3000/api/chats/<id> -b cookies.txt
+```
+
+```json
+{ "deletedIds": ["uuid-root", "uuid-child-1", "uuid-child-2"], "deletedCount": 3 }
+```
+
+### `POST /api/chats/:id/restore` *(phase 4, new)*
+
+Undo one delete: clears `deletedAt`/`deletedBatchId` on the exact id set captured at delete time (matched by `deletedBatchId`).
+
+| Auth | Body | Success | Errors |
+|---|---|---|---|
+| session + owner | `{}` (empty body OK) | `200 { restoredCount }` | `401 UNAUTHENTICATED`, `404 NOT_FOUND`, `429 RATE_LIMITED`, `500 INTERNAL` |
+
+Idempotent: a conversation that is not soft-deleted returns `200 { "restoredCount": 0 }`. The 5-second undo window is a UI convention — the API itself accepts restores any time before the (future) purge.
+
+```bash
+curl -X POST http://localhost:3000/api/chats/<id>/restore \
+  -H 'content-type: application/json' \
+  -b cookies.txt -d '{}'
+```
+
+### `GET /api/chats/:id/export?format=md|json` *(phase 4, new)*
+
+Download one conversation as a file. Not rate-limited.
+
+| Auth | Query | Success | Errors |
+|---|---|---|---|
+| session + owner | `format` = `md` \| `json` (required) | `200` file body | `401 UNAUTHENTICATED`, `404 NOT_FOUND`, `422 INVALID_INPUT` (missing/other format), `500 INTERNAL` |
+
+- **`md`** — `Content-Type: text/markdown; charset=utf-8`; `Content-Disposition: attachment; filename="<slug>-<YYYYMMDD>.md"` (title slugified, ≤ 60 chars, control chars stripped). Structure: `# <title>`, then for a sub-chat a `> Path: …` / `> Highlight: "…"` / `> Context: …` breadcrumb block, a `---` divider, then `## You` / `## Assistant` sections in `createdAt ASC` order. Message content that could break the structure (a line starting with `#`, `---`, or a fence) is wrapped in a ` ```text ` fence.
+- **`json`** — `Content-Type: application/json`; full row data of THIS conversation only; never another user's data; no key material (`providerId` is an id/sentinel only).
+
+```json
+{
+  "conversation": { "id": "uuid", "title": "Deploying with Docker", "parentId": null,
+    "rootConversationId": "uuid", "depth": 0, "highlightText": null, "highlightContext": null,
+    "createdAt": "2026-09-13T10:00:00Z", "updatedAt": "2026-09-13T10:05:00Z" },
+  "messages": [ { "id": "uuid", "role": "user", "content": "Why did my container exit?",
+    "model": null, "providerId": null, "createdAt": "2026-09-13T10:01:00Z" } ]
+}
+```
+
+```bash
+curl 'http://localhost:3000/api/chats/<id>/export?format=md' -b cookies.txt -OJ
+curl 'http://localhost:3000/api/chats/<id>/export?format=json' -b cookies.txt
+```
+
+### `POST /api/chats/:id/messages/:messageId/edit` *(phase 4, new)*
+
+Edit one of your own user messages: truncate everything after it and re-stream the assistant reply. Response `200` is an **SSE stream** (AI SDK v4 protocol), sent after the truncate transaction commits.
+
+| Auth | Body | Success | Errors |
+|---|---|---|---|
+| session + owner | `{ content }` (zod `.strict()`, 1–8000 chars) | `200` SSE stream | `401`, `404 NOT_FOUND` (conversation **or** message missing/foreign), `422 INVALID_INPUT` (with `fields.content`), `422 NOT_EDITABLE` (assistant/system target), `409 STREAM_ACTIVE`, `429 RATE_LIMITED`, `502 PROVIDER_FAILED`, `503 NO_PROVIDER`, `500 INTERNAL` |
+
+Semantics (one transaction): update the target message's `content`, hard-delete all messages with `createdAt >` target (id tie-break), then re-stream from the truncated history. The deleted tail is unrecoverable. Sub-chats are structurally unaffected, but their next send walks live ancestor messages — so they see the edited content. Provider failure mid-stream persists the partial assistant message and emits an error SSE event (Retry re-streams from the truncated history; the edit is not rolled back).
+
+Rate limit: shares the **message-send LLM bucket** (30 / 10 min / user).
+
+```bash
+curl -N -X POST http://localhost:3000/api/chats/<id>/messages/<messageId>/edit \
+  -H 'content-type: application/json' \
+  -H 'accept: text/event-stream' \
+  -b cookies.txt \
+  -d '{"content":"Why did my container exit — and how do I debug it?"}'
+```
+
+### `POST /api/chats/:id/messages/:messageId/regenerate` *(phase 4, new)*
+
+Regenerate the **last** assistant message: delete it and re-stream a new reply from the same preceding history (the previous user message is unchanged and not re-persisted). Response `200` is an **SSE stream**.
+
+| Auth | Body | Success | Errors |
+|---|---|---|---|
+| session + owner | `{}` (empty body OK) | `200` SSE stream | `401`, `404 NOT_FOUND` (conversation **or** message missing/foreign), `422 NOT_REGENERABLE` (not the last assistant message / wrong role), `409 STREAM_ACTIVE`, `429 RATE_LIMITED`, `502 PROVIDER_FAILED`, `503 NO_PROVIDER`, `500 INTERNAL` |
+
+The new reply resolves the provider per-request exactly like a normal send — a different model/provider than the original is possible and is persisted on the new row. The old response is deleted, not versioned. Stop during regeneration behaves like a normal stream stop (partial persists).
+
+Rate limit: shares the **message-send LLM bucket** (30 / 10 min / user).
+
+```bash
+curl -N -X POST http://localhost:3000/api/chats/<id>/messages/<messageId>/regenerate \
+  -H 'content-type: application/json' \
+  -H 'accept: text/event-stream' \
+  -b cookies.txt -d '{}'
 ```
 
 ## Provider endpoints *(phase 3, new)*

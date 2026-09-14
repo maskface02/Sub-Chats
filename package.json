@@ -34,6 +34,7 @@
     "react-resizable-panels": "^4.12.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "rehype-highlight": "^7.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.5",

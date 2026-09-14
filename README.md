@@ -2,9 +2,9 @@
 
 > AI chat with branching conversation trees — a foundation for threaded, exploratory conversations with any model.
 
-![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-3-blue) ![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-alpha-yellow) ![phase](https://img.shields.io/badge/phase-4-blue) ![license](https://img.shields.io/badge/license-MIT-green)
 
-> Phase 3 ships **bring-your-own-key providers** and **markdown rendering**. It builds on phase 0 (auth, streaming chat, history) and phases 1–2 (branching sub-chats, tree navigation, split view).
+> Phase 4 is the polish pass: delete with undo, export, tree search, stop, edit/regenerate, shortcuts. It builds on phase 3 (BYOK providers, markdown) and phases 0–2 (auth, streaming, branching, tree navigation, split view).
 
 ## Features
 
@@ -20,8 +20,15 @@ Phase 0 includes:
 - **Split view** — read two chats side-by-side.
 - **Bring your own key** — OpenAI, Anthropic, Ollama, or any OpenAI-compatible endpoint — [provider docs](docs/getting-started.md#bring-your-own-key).
 - **Markdown rendering** — assistant replies render GFM tables, code blocks, and task lists safely (no raw HTML).
+- **Delete with undo** — soft-delete a conversation and its subtree, restore within 5 seconds.
+- **Export** — download any conversation as Markdown or JSON (⋯ menu).
+- **Tree search** — filter the sidebar by title or highlight text (`/` shortcut).
+- **Stop generation** — abort a streaming reply; the partial response is kept.
+- **Edit & regenerate** — fix a sent message or regenerate the last reply.
+- **Keyboard shortcuts** — `Cmd/Ctrl+K`, `/`, `Cmd/Ctrl+\`, `Esc`, `?` (press `?` for the overlay).
+- **Syntax-highlighted code blocks** — GitHub light/dark themes for fenced code.
 
-What is **not** yet shipped: attachments, search, message edit/regenerate, syntax highlighting. See the [roadmap](#roadmap).
+What is **not** yet shipped: attachments, tool use, optimistic rendering, MFA. See the [roadmap](#roadmap).
 
 ## Sub-chats (the unique feature)
 
@@ -121,7 +128,7 @@ Phase 0 is **shipped** when the [definition of done](.orchestrator/specs/phase-0
 - **Phase 1** — sub-chat creation (highlight any assistant text → branch into a sub-chat). DB schema already reserves the columns.
 - **Phase 2** — tree-map sidebar + split view (shipped; regenerated messages deferred to phase 3).
 - **Phase 3** — BYOK providers (encrypted per-user keys), Anthropic, markdown rendering (shipped).
-- **Phase 4** — syntax highlighting, attachments, tool use / function calling, MFA.
+- **Phase 4** — delete with undo, export, tree search, stop, syntax highlighting, edit/regenerate, keyboard shortcuts (shipped).
 
 Full specs → [`.orchestrator/specs/`](.orchestrator/specs/).
 

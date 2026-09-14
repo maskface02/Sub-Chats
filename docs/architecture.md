@@ -108,6 +108,32 @@ User-supplied `baseUrl` is fetched server-side, so the `custom` type is an SSRF 
 
 Assistant messages render with `react-markdown@^10.1.0` + `remark-gfm@^4.0.1` (no new deps) in a **safe configuration**: no `rehype-raw`, no `dangerouslySetInnerHTML` — raw HTML in AI output renders as plain text; default `urlTransform` neutralises `javascript:`/`data:` URIs; links get `target="_blank" rel="noopener noreferrer"`; images render as links (no `<img>`). User messages stay plain text with preserved newlines. Rendering happens once **after** the stream completes; during streaming the message is plain-text accumulation with a caret.
 
+## Soft delete (phase 4)
+
+Conversations are never hard-deleted. Deletion is a soft delete on the `conversations` table (migration `0001` — the first post-bootstrap migration):
+
+### Columns and index
+
+- `deleted_at` — nullable timestamptz. `NULL` = live row.
+- `deleted_batch_id` — nullable text. A uuid generated per delete call; every row soft-deleted by the same delete carries the same batch id.
+- The list index is swapped to a **live-only partial index**: `conversations_user_updated_live_idx ON conversations (user_id, updated_at DESC) WHERE deleted_at IS NULL` — the hot list query never scans deleted rows.
+
+### Cascade semantics
+
+`DELETE /api/chats/:id` soft-deletes the target **and its whole subtree** in one transaction: the subtree id set is computed from `rootConversationId`, then one `UPDATE ... SET deleted_at, deleted_batch_id WHERE deleted_at IS NULL` marks every **live** descendant. Descendants already soft-deleted by an earlier, separate delete keep their original batch id — restoring the parent does **not** resurrect them; restoring their own batch does.
+
+### Restore by batch
+
+`POST /api/chats/:id/restore` replays the exact batch: `UPDATE conversations SET deleted_at = NULL, deleted_batch_id = NULL WHERE deleted_batch_id = :batchId AND user_id = :userId`. Exact and idempotent (second call → `restoredCount: 0`) with no extra table.
+
+### 404 parity
+
+A soft-deleted conversation is indistinguishable from a missing one: **every** read and write route — list, `GET /api/chats/:id`, tree, export, message send, branch, edit, regenerate — filters `deleted_at IS NULL` or returns the same byte-identical `404 NOT_FOUND` (ownership guard parity). A soft-deleted root also 404s its descendants via the tree endpoint's root lookup.
+
+### Truncate-on-edit
+
+Message-level soft delete does not exist. `POST .../messages/:messageId/edit` **hard-DELETEs** message rows after the target (strictly `createdAt > target`, id tie-break) inside the same transaction that applies the edit, then re-streams. The conversation-level undo is the only safety net. The 30-day hard-purge cron for soft-deleted conversations is an ops concern, out of phase-4 scope.
+
 ## Auth layer
 
 - **Auth.js v5** with `@auth/drizzle-adapter`, **Credentials** provider only, **DB session strategy** (not JWT) so sign-out invalidates server-side.

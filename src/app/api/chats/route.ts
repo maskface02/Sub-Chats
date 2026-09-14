@@ -53,6 +53,8 @@ export async function GET(req: NextRequest) {
       and(
         eq(conversations.userId, userId),
         isNull(conversations.parentId),
+        // Soft-deleted conversations never appear in the list (US-401 AC.5).
+        isNull(conversations.deletedAt),
         cursorDate ? lt(conversations.updatedAt, cursorDate) : undefined,
       ),
     )

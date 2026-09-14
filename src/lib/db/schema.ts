@@ -8,7 +8,7 @@ import {
   index,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 const ts = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
 const tsNullable = (name: string) => timestamp(name, { withTimezone: true });
@@ -90,14 +90,19 @@ export const conversations = pgTable(
     highlightContext: text("highlight_context"),
     createdAt: ts("created_at").$defaultFn(() => new Date()),
     updatedAt: ts("updated_at").$defaultFn(() => new Date()),
+    deletedAt: tsNullable("deleted_at"),
+    deletedBatchId: text("deleted_batch_id"),
   },
+  // Partial index: the hot list query scans live rows only (US-401).
   (c) => ({
-    userUpdatedIdx: index("conversations_user_updated_idx").on(
-      c.userId,
-      c.updatedAt,
-    ),
+    userUpdatedLiveIdx: index("conversations_user_updated_live_idx")
+      .on(c.userId, c.updatedAt)
+      .where(sql`deleted_at IS NULL`),
     parentIdx: index("conversations_parent_idx").on(c.parentId),
     rootIdx: index("conversations_root_idx").on(c.rootConversationId),
+    deletedBatchIdx: index("conversations_deleted_batch_idx").on(
+      c.deletedBatchId,
+    ),
   }),
 );
 

@@ -10,6 +10,7 @@ import {
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { cn } from "@/lib/utils";
 
 type PreProps = { children?: ReactNode };
@@ -41,11 +42,11 @@ function PreBlock({ children }: PreProps) {
   };
 
   return (
-    <div className="my-2 overflow-hidden rounded-md border border-border bg-zinc-950 dark:bg-zinc-900">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1">
+    <div className="my-2 overflow-hidden rounded-md border border-border bg-zinc-100 dark:bg-zinc-900">
+      <div className="flex items-center justify-between border-b border-border px-3 py-1">
         <span
           aria-label={`${language || "code"} code`}
-          className="font-mono text-[11px] uppercase tracking-wide text-zinc-400"
+          className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground"
         >
           {language || "code"}
         </span>
@@ -53,7 +54,7 @@ function PreBlock({ children }: PreProps) {
           type="button"
           onClick={copy}
           aria-label="Copy code"
-          className="rounded px-2 py-0.5 font-mono text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800"
+          className="rounded px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           {copied ? "Copied" : "Copy"}
         </button>
@@ -109,9 +110,10 @@ const components: Components = {
 };
 
 /**
- * Safe react-markdown wrapper. NO rehype plugins (especially not rehype-raw)
- * and never dangerouslySetInnerHTML: AI output is untrusted and raw HTML must
- * degrade to text. The default urlTransform neutralizes javascript:/data: URIs.
+ * Safe react-markdown wrapper. rehype-highlight (CSS-class based, detect
+ * disabled — US-406) is the ONLY rehype plugin; no rehype-raw and never
+ * dangerouslySetInnerHTML: AI output is untrusted and raw HTML must degrade
+ * to text. The default urlTransform neutralizes javascript:/data: URIs.
  */
 export const Markdown = memo(function Markdown({ content }: { content: string }) {
   return (
@@ -131,7 +133,11 @@ export const Markdown = memo(function Markdown({ content }: { content: string })
       )}
       data-component="markdown"
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: false }]]}
+        components={components}
+      >
         {content}
       </ReactMarkdown>
     </div>

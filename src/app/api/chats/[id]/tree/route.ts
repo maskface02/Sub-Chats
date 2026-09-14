@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
@@ -23,7 +23,14 @@ export async function GET(
   const convRows = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)))
+    .where(
+      and(
+        eq(conversations.id, id),
+        eq(conversations.userId, userId),
+        // Soft-deleted ids behave exactly like missing ids (US-401 AC.5).
+        isNull(conversations.deletedAt),
+      ),
+    )
     .limit(1);
 
   if (convRows.length === 0) {
@@ -40,7 +47,15 @@ export async function GET(
     const rootRows = await db
       .select()
       .from(conversations)
-      .where(and(eq(conversations.id, rootId), eq(conversations.userId, userId)))
+      .where(
+        and(
+          eq(conversations.id, rootId),
+          eq(conversations.userId, userId),
+          // A soft-deleted ROOT makes all descendants 404 (they were
+          // soft-deleted as one batch — spec §5 note).
+          isNull(conversations.deletedAt),
+        ),
+      )
       .limit(1);
     if (rootRows.length === 0) {
       return jsonError(404, "NOT_FOUND", "Conversation not found");
@@ -62,6 +77,8 @@ export async function GET(
       and(
         eq(conversations.rootConversationId, rootId),
         eq(conversations.userId, userId),
+        // Deleted subtree members are hidden from the tree.
+        isNull(conversations.deletedAt),
       ),
     )
     .orderBy(asc(conversations.createdAt));

@@ -3,16 +3,17 @@
 last_updated: 2026-09-13
 
 ## phase
-current: 3
+current: 4
 status: complete
-title: "multi-provider + custom (BYOK) + markdown rendering"
-spec: .orchestrator/specs/phase-3.md (frozen, revision 2)
+title: "polish: delete/undo, export, search, stop, highlighting, edit/regenerate, shortcuts"
+spec: .orchestrator/specs/phase-4.md (frozen, revision 2)
 
 ## phase_status
-- 0: ✅ complete (typecheck pass, 17 unit tests pass, build pass — pglite swap)
-- 1: ✅ complete (typecheck pass, 46 unit tests pass, build pass — sub-chat core)
-- 2: ✅ complete (typecheck pass, 53 unit tests pass, build pass — tree-map + split view)
-- 3: ✅ complete (typecheck pass, 114 unit tests pass, build pass — provider CRUD, AES-256-GCM, SSRF guard + redirect-safe fetch, settings page, markdown)
+- 0: ✅ complete (17 tests)
+- 1: ✅ complete (46 tests — sub-chat core)
+- 2: ✅ complete (53 tests — tree-map + split view)
+- 3: ✅ complete (114 tests — BYOK providers + markdown)
+- 4: ✅ complete (156 tests — soft-delete/undo, export, tree search, stop, rehype-highlight, edit/regenerate, keyboard shortcuts)
 
 ## active_roles (phase 1)
 - PM: spec delivered (frozen rev 2 after 3 polish fixes + 3 open-question resolutions)

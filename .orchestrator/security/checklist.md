@@ -1,6 +1,6 @@
 # Security Checklist (running tracker)
 
-**phase:** 0 + 1 + 2 + 3
+**phase:** 0 + 1 + 2 + 3 + 4
 **last_updated:** 2026-09-14
 **reviewer:** security
 
@@ -333,6 +333,75 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 
 ---
 
+## phase 4
+
+### threat modeling
+- [x] STRIDE model complete (`.orchestrator/security/threat-models/phase-4.md`) — extends phase-3 baseline
+- [x] OWASP Top 10 (2025) mapping included
+- [x] Spec hardening requests raised (7 items; #1 rate-limit reconciliation + #3 deleted-ancestor behavior are audit-blocking gates)
+- [ ] Code audit pending (`.orchestrator/security/audits/phase-4.md` — after Backend + Frontend delivery)
+- [ ] Spec hardening items resolved or accepted by Orchestrator
+
+### access control — soft delete as revocation surface (T-E-1, T-E-2)
+- [ ] deletedAt filter on ALL conversation-id routes (list/read/tree/export/send/branch/edit/regenerate) — grep-verified via one shared live-row lookup helper; branch-on-deleted → 404 (orphan guard), edit-on-deleted → 404 (resurrect-by-write guard), regenerate-on-deleted → 404 (unit tests per US-401 AC.5)
+- [ ] Delete-on-already-deleted → 404 (no second batch minted, undo set not split)
+- [ ] Restore scoped by user_id + batch_id (UPDATE predicate includes `user_id = :userId`, not only the pre-check — no cross-user restore); batchId read from the target row's own `deleted_batch_id`, never from the request
+- [ ] Restore idempotent: not-deleted → 200 `{restoredCount: 0}`; cross-user restore → 404 byte-identical (Vitest)
+- [ ] Cascade UPDATE filters `deleted_at IS NULL` (live-only, no batch overwrite — US-403 AC.2b nested-batch integrity test passes)
+- [ ] Delete 409 STREAM_ACTIVE covers target AND every descendant in the cascade set (AC.6)
+- [ ] 404 byte-identical parity (missing vs foreign) on all five new routes, incl. edit's cross-conversation messageId (T-I-3)
+- [ ] NO hard DELETE on `conversations` anywhere (grep gate, US-401 AC.9)
+
+### export (T-T-1, T-T-2, T-I-1)
+- [ ] Export ownership 404; messages query join-predicated on owner — no other rows/other users in json (Vitest: B's messages never in A's export)
+- [ ] json shape exactly per US-403 AC.4 — no key material, no cross-user data
+- [ ] MD export escaping: `#`/`---`/fence-leading content fence-wrapped, inner fences lengthened; adversarial fixture passes (US-403 AC.3)
+- [ ] MD breadcrumb shows ONLY own ancestor titles; deleted-ancestor-on-live-chain handled per hardening #3 (no title leak)
+- [ ] Filename slug sanitization: strip CR/LF/`"`/`\`/C0-C1 control chars, ≤ 60 chars, RFC 5987 non-ASCII; no raw title in any header (header-injection unit tests: CRLF/quote/control/unicode)
+- [ ] Export size cap (e.g. 10MB → 413) or documented limit (hardening #2); single-query read, no N+1
+
+### edit / regenerate (T-T-3, DI-2)
+- [ ] Edit content validation = send validation (shared zod `.strict()`, 1..8000; 8001/empty/unknown-field → 422)
+- [ ] Edit: user-role only (422 NOT_EDITABLE); transactional truncate + re-stream; ancestor walk sees edited content (unit test)
+- [ ] Regenerate: last-assistant-only (422 otherwise); target deleted + re-stream, fresh provider resolution persisted
+- [ ] 409 STREAM_ACTIVE on both; destructive ops never abort-then-proceed (§8.6)
+- [ ] Edit truncation destructive/unrecoverable accepted as documented risk (OQ-4); UI copy states permanence
+
+### DoS / abuse (T-D-1, T-D-2)
+- [ ] Shared mutation rate limit: delete + restore ONE bucket (30/10min/user), 429 + Retry-After + X-RateLimit-* — not per-route
+- [ ] Edit + regenerate share ONE LLM bucket with send — bucket numbers pinned per hardening #1 (reconcile 30/10min vs 60/min+500/hr discrepancy)
+- [ ] Cascade + restore are set-based UPDATEs (no per-id loops — ping-pong cost flat)
+
+### audit logging (T-R-1, T-R-2)
+- [ ] Delete/restore/edit/regenerate audit events logged (delete: userId + conversationId + batchId + deletedCount; restore: + restoredCount; edit/regenerate: userId + conversationId + messageId) — NO message content, NO titles, NO edited text
+- [ ] Grep every phase-4 log call for content-bearing fields (`content`, `title`, `highlightText`) — redact is pattern-based, ad-hoc field names slip through
+- [ ] Foreign/missing 404s on the five new routes warn-logged
+
+### schema / migration (DI-1, DI-3)
+- [ ] Migration `0001` = deleted_at + deleted_batch_id + deleted_batch_idx + partial live-index swap; rollback documented in the migration file comment; applies to fresh AND data-carrying DBs (AC-P4-14)
+- [ ] Bootstrap SQL parity for dev (0000 regenerated vs post-bootstrap 0001 — documented per hardening #4)
+- [ ] Delete/stream-start race closed (in-flight check inside the transaction, hardening #5) or residual documented
+
+### XSS / CSRF carry-over
+- [ ] Zero `dangerouslySetInnerHTML` in new components (grep gate); edit content renders via the same markdown pipeline; user messages stay plain text
+- [ ] CSRF posture on new POST routes (JSON-only zod bodies); `DELETE /api/chats/:id` (no body) relies on SameSite=Lax — no SameSite drift
+- [ ] Delete control hidden for non-owned conversations (US-402 AC.7, defense-in-depth)
+
+### tests & audit gates
+- [ ] Vitest: read-path 404s on deleted ids (all routes incl. branch/edit/regenerate), restore idempotence + cross-user 404, nested-batch integrity, export fixtures (adversarial md + header injection), edit validation parity, regenerate guard, export row scoping
+- [ ] `pnpm audit` clean or risks documented; NO new dependencies (AC-P4-12)
+
+### sign-off gates
+- [ ] Conditional blockers resolved: rate-limit bucket reconciliation (hardening #1) + deleted-ancestor behavior (hardening #3)
+- [ ] STRIDE model approved by Orchestrator
+- [ ] Spec hardening items resolved or accepted
+- [ ] Code audit complete
+- [ ] No `high` or `critical` findings open
+- [ ] Reviewed by Critic (Muse Spark)
+- [ ] Phase 4 marked `secure` in `.orchestrator/STATE.md`
+
+---
+
 ## phase-by-phase tracker
 
 | phase | threat model | checklist | audit | sign-off |
@@ -341,6 +410,7 @@ Format: `[x]` = done, `[~]` = in progress / partial, `[ ]` = pending / not start
 | 1    | done (preliminary) | this file | pending code review | pending |
 | 2    | done (preliminary) | this file | stub (`audits/phase-2.md`) | pending |
 | 3    | done (preliminary) | this file | stub (`audits/phase-3.md`) | pending |
+| 4    | done (preliminary) | this file | stub (`audits/phase-4.md`) | pending |
 
 ---
 

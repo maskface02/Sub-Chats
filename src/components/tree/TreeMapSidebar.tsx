@@ -8,6 +8,7 @@ import type { HierarchyPointNode } from "d3-hierarchy";
 import { ApiError } from "@/lib/api-client/base";
 import { cn } from "@/lib/utils";
 import { useSplit } from "@/lib/state/split";
+import { registerTreeSearchFocus } from "@/lib/state/tree-search";
 import {
   TreeQueryScope,
   useConversationTree,
@@ -68,15 +69,70 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Tree search (US-404): client-side only, 150ms debounce, per-instance.
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
   const resetCollapsed = useCallback(() => setCollapsed(new Set()), []);
   useEffect(() => {
     resetCollapsed();
+    setQuery("");
+    setDebouncedQuery("");
   }, [rootId, conversation?.id, resetCollapsed]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 150);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    return registerTreeSearchFocus(() => {
+      const el = searchRef.current;
+      if (!el || isError) return false;
+      if (el.offsetParent === null) return false; // hidden instance (drawer vs panel)
+      el.focus();
+      return true;
+    });
+  }, [isError]);
+
+  const matchInfo = useMemo(() => {
+    if (!data) return null;
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return null;
+    const matches = new Set<string>();
+    const kept = new Set<string>();
+    const walk = (dto: TreeNodeDto, ancestors: string[]): boolean => {
+      const selfMatch =
+        (dto.title || "").toLowerCase().includes(q) ||
+        (dto.highlightText ?? "").toLowerCase().includes(q);
+      let childMatch = false;
+      for (const c of dto.children) {
+        childMatch = walk(c, [...ancestors, dto.id]) || childMatch;
+      }
+      if (selfMatch) matches.add(dto.id);
+      if (selfMatch || childMatch) {
+        kept.add(dto.id);
+        for (const a of ancestors) kept.add(a);
+        return true;
+      }
+      return false;
+    };
+    walk(data.root, []);
+    return { matches, kept, count: matches.size };
+  }, [data, debouncedQuery]);
 
   const visible = useMemo(() => {
     if (!data) return {} as Returned;
-    return buildVisible(data, collapsed);
-  }, [data, collapsed]);
+    // While searching, matches in collapsed subtrees must stay reachable —
+    // treat every node as expanded (US-404 AC.2).
+    const effCollapsed = matchInfo ? new Set<string>() : collapsed;
+    const built = buildVisible(data, effCollapsed);
+    if (!matchInfo) return built;
+    const items = built.items.filter((i) => matchInfo.kept.has(i.dto.id));
+    renumber(items);
+    return { ...built, items };
+  }, [data, collapsed, matchInfo]);
 
   const navigate = useCallback(
     (id: string) => {
@@ -210,6 +266,26 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
 
   const rovingTarget = focusedId ?? currentId;
 
+  const clearSearch = useCallback(() => {
+    setQuery("");
+    setDebouncedQuery("");
+  }, []);
+
+  const onSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      // Return focus to the tree (US-404 AC.4): focus a visible node BEFORE
+      // clearing so the root item — always kept — keeps focus across the
+      // re-render; fall back to blurring the input.
+      containerRef.current
+        ?.querySelector<HTMLButtonElement>("[data-treeitem-id]")
+        ?.focus();
+      clearSearch();
+    },
+    [clearSearch],
+  );
+
   const ariaBusy = isLoading ? "true" : "false";
 
   return (
@@ -237,6 +313,22 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
         ) : null}
       </div>
 
+      <div className="border-b px-3 py-2">
+        <input
+          ref={searchRef}
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onSearchKeyDown}
+          placeholder="Search tree…"
+          aria-label="Search tree"
+          disabled={isError}
+          aria-disabled={isError || undefined}
+          data-testid="tree-search"
+          className="w-full rounded-md border bg-background px-2 py-1 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+        />
+      </div>
+
       {isLoading ? (
         <div className="space-y-3 p-3" data-testid="tree-skeleton">
           <div className="h-9 w-full rounded-full bg-muted" />
@@ -247,26 +339,57 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
         <TreeErrorState error={error} onRetry={() => void refetch()} />
       ) : data ? (
         <>
-          {(!data.root.children || data.root.children.length === 0) && (
+          {matchInfo && matchInfo.count > 0 ? (
+            <p
+              role="status"
+              className="border-b px-3 py-1.5 text-xs text-muted-foreground"
+              data-testid="tree-search-count"
+            >
+              {matchInfo.count}{" "}
+              {matchInfo.count === 1 ? "conversation" : "conversations"} match
+            </p>
+          ) : null}
+          {(!data.root.children || data.root.children.length === 0) &&
+          !matchInfo ? (
             <p
               className="border-b px-3 py-2 text-xs text-muted-foreground"
               data-testid="tree-empty-hint"
             >
               No sub-chats yet — select text in a reply to branch
             </p>
+          ) : null}
+          {matchInfo && matchInfo.count === 0 ? (
+            <div
+              role="status"
+              className="flex flex-1 flex-col items-center gap-2 px-4 py-8 text-center"
+              data-testid="tree-search-empty"
+            >
+              <p className="text-sm text-muted-foreground">
+                No conversations match &quot;{debouncedQuery}&quot;
+              </p>
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="rounded border px-2 py-1 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Clear search
+              </button>
+            </div>
+          ) : (
+            <TreeSurface
+              data={data}
+              visible={visible}
+              collapsed={collapsed}
+              highlightQuery={debouncedQuery}
+              rovingTarget={rovingTarget}
+              onFocusNode={setFocusedId}
+              onActivate={navigate}
+              onToggle={onToggle}
+              onTreeKeyDown={onKeyDownItem}
+              onHoverStart={onHoverStart}
+              onHoverEnd={onHoverEnd}
+            />
           )}
-          <TreeSurface
-            data={data}
-            visible={visible}
-            collapsed={collapsed}
-            rovingTarget={rovingTarget}
-            onFocusNode={setFocusedId}
-            onActivate={navigate}
-            onToggle={onToggle}
-            onTreeKeyDown={onKeyDownItem}
-            onHoverStart={onHoverStart}
-            onHoverEnd={onHoverEnd}
-          />
         </>
       ) : null}
 
@@ -276,7 +399,15 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
           className="pointer-events-none fixed z-50 max-w-xs rounded border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md"
           style={{ top: tooltip.y + 16, left: tooltip.x + 12 }}
         >
-          <div className="font-medium">{tooltip.dto.title || "New chat"}</div>
+          <div className="font-medium">
+            <HighlightedText text={tooltip.dto.title || "New chat"} query={debouncedQuery} />
+          </div>
+          {tooltip.dto.highlightText ? (
+            <div className="mt-1 text-muted-foreground">
+              <span aria-hidden="true">📌 </span>
+              <HighlightedText text={tooltip.dto.highlightText} query={debouncedQuery} />
+            </div>
+          ) : null}
           <div className="text-muted-foreground">{formatDate(tooltip.dto.createdAt)}</div>
         </div>
       ) : null}
@@ -328,8 +459,7 @@ interface Returned {
   maxDepth: number;
 }
 
-function buildVisible(data: TreeResponse, collapsed: Set<string>): Returned {
-  const items: VisibleItem[] = [];
+function buildVisible(data: TreeResponse, collapsed: Set<string>): Returned {  const items: VisibleItem[] = [];
   const maxDepth = 0;
   const walk = (
     dto: TreeNodeDto,
@@ -369,10 +499,64 @@ function buildVisible(data: TreeResponse, collapsed: Set<string>): Returned {
   return { items, maxDepth };
 }
 
+/** Recomputes aria-setsize/posinset after client-side filtering. */
+function renumber(items: VisibleItem[]): void {
+  const totals = new Map<string, number>();
+  for (const it of items) {
+    const key = it.parentId ?? "";
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  for (const it of items) {
+    const key = it.parentId ?? "";
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    it.setSize = totals.get(key) ?? 1;
+    it.posInSet = n;
+  }
+}
+
+/** HTML-context match highlighter (tooltips) — visual only, text unchanged. */
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const parts: { text: string; hit: boolean }[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(ql, i);
+    if (idx === -1) {
+      parts.push({ text: text.slice(i), hit: false });
+      break;
+    }
+    if (idx > i) parts.push({ text: text.slice(i, idx), hit: false });
+    parts.push({ text: text.slice(idx, idx + ql.length), hit: true });
+    i = idx + ql.length;
+  }
+  return (
+    <>
+      {parts.map((p, j) =>
+        p.hit ? (
+          <mark
+            key={j}
+            className="bg-yellow-200 text-inherit dark:bg-yellow-700/60"
+          >
+            {p.text}
+          </mark>
+        ) : (
+          <span key={j}>{p.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 interface TreeSurfaceProps {
   data: TreeResponse;
   visible: Returned;
   collapsed: Set<string>;
+  highlightQuery: string;
   rovingTarget: string;
   onFocusNode: (id: string) => void;
   onActivate: (id: string) => void;
@@ -386,6 +570,7 @@ function TreeSurface({
   data,
   visible,
   collapsed,
+  highlightQuery,
   rovingTarget,
   onFocusNode,
   onActivate,
@@ -474,6 +659,7 @@ function TreeSurface({
                 variant={variant}
                 isFocused={rovingTarget === n.dto.id}
                 hasChildren={n.hasChildren && !collapsed.has(n.dto.id)}
+                highlightQuery={highlightQuery}
               />
             );
           })}

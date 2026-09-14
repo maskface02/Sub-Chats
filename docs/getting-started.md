@@ -110,6 +110,55 @@ Once you have at least one sub-chat, two new surfaces help you get around:
 4. Drag the divider to resize; use the **⇅** control in the divider to stack the panes vertically instead.
 5. Close a pane with its **×** — a reload always returns you to single view (the split is not saved).
 
+## Everyday actions
+
+Phase 4 adds the day-to-day polish. All of these are available from the chat view.
+
+### Delete a conversation (with undo)
+
+1. Open the **⋯** menu in the chat header (or right-click a node in the tree sidebar) → **Delete**.
+2. A confirm dialog tells you exactly what goes: a conversation with sub-chats is deleted **with its whole subtree**.
+3. After confirming, a toast appears with an **Undo** button, active for **5 seconds**. Click it to restore the conversation and its subtree — no reload needed.
+4. After the 5-second window the delete is still soft (recoverable server-side for 30 days), but there is no UI path back — treat it as gone.
+
+Deleting is blocked while a reply is streaming in the conversation or any of its sub-chats — stop the stream first.
+
+### Export a conversation
+
+**⋯** menu → **Export as Markdown** or **Export as JSON**. The file downloads immediately:
+
+- **Markdown** — readable copy with the title, the ancestor path + highlight context (for sub-chats), and every message.
+- **JSON** — full raw data of that conversation (messages, model, provider id, timestamps) for backups or tooling.
+
+Exports are per-conversation; whole-tree export is not supported yet.
+
+### Search the tree
+
+Press `/` (or click the search box at the top of the tree sidebar) and type. The tree filters live by title and highlight text; matching substrings are highlighted and ancestor chains stay visible so matches stay reachable. `Esc` clears the search. Search is client-side — nothing is sent to the server, and it only covers the current tree.
+
+### Stop a long response
+
+While a reply is streaming, the composer's send button becomes a **Stop** button. Click it to abort the stream: the partial reply is kept (marked with a "Stopped" badge until reload), and you can send a new message immediately. `Esc` does **not** stop a stream — it is reserved for closing panes and dialogs.
+
+### Edit your message or regenerate a reply
+
+- **Edit** — hover (or keyboard-focus) one of your sent messages → **Edit**. The bubble becomes a textarea; saving truncates everything after it and streams a fresh reply from the edited message. The truncated tail is gone permanently.
+- **Regenerate** — on the **last** assistant reply, use the **Regenerate** affordance. The old reply is replaced by a new stream with the same history (a different model may be picked if your provider setup changed).
+
+Both are blocked while a stream is active in that conversation, and both count against the message-send rate limit.
+
+### Keyboard shortcuts
+
+| Keys | Action |
+|---|---|
+| `Cmd/Ctrl + K` | New chat |
+| `/` | Focus tree search |
+| `Cmd/Ctrl + \` | Toggle split view |
+| `Esc` | Close dialog / clear search / close focused pane |
+| `?` | Show the shortcut overlay |
+
+Shortcuts are ignored while you're typing in an input or textarea (except `Esc` in its own context). Press `?` anywhere to see the overlay.
+
 ## Bring your own key
 
 You don't need a server-level API key — you can add your own provider from the UI:

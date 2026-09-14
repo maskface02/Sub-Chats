@@ -12,6 +12,9 @@ export const ERROR_CODES = [
   "INVALID_SELECTION",
   "ANCESTOR_UNAVAILABLE",
   "PROVIDER_LIMIT",
+  "STREAM_ACTIVE",
+  "NOT_EDITABLE",
+  "NOT_REGENERABLE",
   "INTERNAL",
 ] as const;
 
@@ -171,6 +174,75 @@ export const SendMessageRequestSchema = z.object({
 });
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+
+// ---------- delete / restore (phase 4 US-401) ----------
+
+export const DeleteResponseSchema = z.object({
+  deletedIds: z.array(z.string()),
+  deletedCount: z.number().int().min(0),
+  batchId: z.string(),
+});
+
+export type DeleteResponse = z.infer<typeof DeleteResponseSchema>;
+
+export const RestoreResponseSchema = z.object({
+  restoredCount: z.number().int().min(0),
+});
+
+export type RestoreResponse = z.infer<typeof RestoreResponseSchema>;
+
+// ---------- export (phase 4 US-403) ----------
+
+export const ExportQuerySchema = z.object({
+  format: z.enum(["md", "json"]),
+});
+
+export type ExportQuery = z.infer<typeof ExportQuerySchema>;
+
+export const ExportedMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.string(),
+  model: z.string().nullable(),
+  providerId: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type ExportedMessage = z.infer<typeof ExportedMessageSchema>;
+
+export const ExportJsonResponseSchema = z.object({
+  conversation: z.object({
+    id: z.string(),
+    title: z.string(),
+    parentId: z.string().nullable(),
+    rootConversationId: z.string(),
+    depth: z.number().int().min(0),
+    highlightText: z.string().nullable(),
+    highlightContext: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }),
+  messages: z.array(ExportedMessageSchema),
+});
+
+export type ExportJsonResponse = z.infer<typeof ExportJsonResponseSchema>;
+
+// ---------- edit / regenerate (phase 4 US-407/US-408) ----------
+
+export const EditMessageRequestSchema = z
+  .object({
+    content: z
+      .string()
+      .min(1, "Message must not be empty")
+      .max(8000, "Message too long (max 8000 chars)"),
+  })
+  .strict();
+
+export type EditMessageRequest = z.infer<typeof EditMessageRequestSchema>;
+
+export const RegenerateRequestSchema = z.object({}).strict();
+
+export type RegenerateRequest = z.infer<typeof RegenerateRequestSchema>;
 
 // ---------- tree (phase 2) ----------
 

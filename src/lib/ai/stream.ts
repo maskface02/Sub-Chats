@@ -1,6 +1,6 @@
 import "server-only";
 import { streamText, type CoreMessage } from "ai";
-import { eq, asc, and, inArray } from "drizzle-orm";
+import { eq, asc, and, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
 import { getActiveProviderFor, SsrfBlockedError } from "./provider";
@@ -23,6 +23,10 @@ export type StreamChatInput = {
   userMessage: string;
   clientMessageId?: string;
   depth?: number;
+  // Edit/regenerate (US-407/408): message rows were already truncated/updated
+  // in a prior transaction. Do NOT insert a user row and do NOT append a user
+  // turn — history (plus ancestor walk) is the final model input.
+  skipUserPersist?: boolean;
 };
 
 export type StreamChatResult =
@@ -69,6 +73,7 @@ async function assertOwnership(
       and(
         eq(conversations.id, conversationId),
         eq(conversations.userId, userId),
+        isNull(conversations.deletedAt),
       ),
     )
     .limit(1);
@@ -253,7 +258,7 @@ export async function walkAncestors(args: {
   target: ConversationRow;
   sessionUserId: string;
   fetcher: AncestorFetcher;
-  newUserMessage: string;
+  newUserMessage?: string;
 }): Promise<CoreMessage[]> {
   const { target, sessionUserId, fetcher, newUserMessage } = args;
 
@@ -329,19 +334,29 @@ export async function walkAncestors(args: {
     highlightText: target.highlightText,
   });
 
-  flat.push({ role: "user", content: newUserMessage });
+  if (newUserMessage !== undefined) {
+    flat.push({ role: "user", content: newUserMessage });
+  }
   return [{ role: "system", content: systemNote }, ...flat];
 }
 
 export async function buildModelContext(input: {
   targetConversationId: string;
-  newUserMessage: string;
+  newUserMessage?: string;
   sessionUserId: string;
 }): Promise<CoreMessage[]> {
+  // Soft-deleted conversations behave exactly like missing ones (US-401 AC.5):
+  // the target 404s here, and a deleted ancestor in the chain resolves to null
+  // below — walkAncestors maps that to 503 ANCESTOR_UNAVAILABLE.
   const rows = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.id, input.targetConversationId))
+    .where(
+      and(
+        eq(conversations.id, input.targetConversationId),
+        isNull(conversations.deletedAt),
+      ),
+    )
     .limit(1);
   const target = rows[0] as ConversationRow | undefined;
   if (!target) {
@@ -356,7 +371,7 @@ export async function buildModelContext(input: {
         const r = await db
           .select()
           .from(conversations)
-          .where(eq(conversations.id, id))
+          .where(and(eq(conversations.id, id), isNull(conversations.deletedAt)))
           .limit(1);
         return (r[0] as ConversationRow | undefined) ?? null;
       },
@@ -390,6 +405,7 @@ export async function streamChatResponse(
     userId,
     userMessage,
     depth = 0,
+    skipUserPersist = false,
   } = input;
 
   const owned = await assertOwnership(conversationId, userId);
@@ -488,13 +504,15 @@ export async function streamChatResponse(
   };
 
   try {
-    await db.insert(messages).values({
-      id: userMsgId,
-      conversationId,
-      role: "user",
-      content: userMessage,
-      createdAt: new Date(),
-    });
+    if (!skipUserPersist) {
+      await db.insert(messages).values({
+        id: userMsgId,
+        conversationId,
+        role: "user",
+        content: userMessage,
+        createdAt: new Date(),
+      });
+    }
   } catch (err) {
     log.error({ err, conversationId, userMsgId }, "failed to persist user message");
     releaseLock();
@@ -512,7 +530,7 @@ export async function streamChatResponse(
     try {
       modelMessages = await buildModelContext({
         targetConversationId: conversationId,
-        newUserMessage: userMessage,
+        newUserMessage: skipUserPersist ? undefined : userMessage,
         sessionUserId: userId,
       });
     } catch (err) {
@@ -549,7 +567,7 @@ export async function streamChatResponse(
       const history = await loadHistory(conversationId);
       modelMessages = [
         ...history,
-        { role: "user", content: userMessage },
+        ...(skipUserPersist ? [] : [{ role: "user" as const, content: userMessage }]),
       ];
     } catch (err) {
       log.error({ err, conversationId }, "failed to load message history");
@@ -619,4 +637,13 @@ export async function streamChatResponse(
 
 export function _internalInFlightMap(): Map<string, AbortController> {
   return inFlight;
+}
+
+/**
+ * True when a stream is currently in-flight for this conversation.
+ * Used by delete/edit/regenerate to return 409 STREAM_ACTIVE (US-401 AC.6
+ * covers descendants via the subtree id set computed by the caller).
+ */
+export function isStreamActive(conversationId: string): boolean {
+  return inFlight.has(conversationId);
 }

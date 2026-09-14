@@ -10,6 +10,8 @@ export interface TreeNodeShapeProps {
   isFocused: boolean;
   hasChildren: boolean;
   labelId?: string;
+  /** When set, matching substrings render visually highlighted (US-404 AC.2). */
+  highlightQuery?: string;
 }
 
 const NODE_WIDTH = 148;
@@ -20,6 +22,30 @@ function truncateTitle(title: string): string {
   if (!title) return "New chat";
   if (title.length <= CHAR_LIMIT) return title;
   return `${title.slice(0, CHAR_LIMIT - 1)}…`;
+}
+
+interface TitleSegment {
+  text: string;
+  hit: boolean;
+}
+
+function splitHighlight(text: string, query: string): TitleSegment[] {
+  const q = query.trim().toLowerCase();
+  if (!q || !text) return [{ text, hit: false }];
+  const lower = text.toLowerCase();
+  const out: TitleSegment[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(q, i);
+    if (idx === -1) {
+      out.push({ text: text.slice(i), hit: false });
+      break;
+    }
+    if (idx > i) out.push({ text: text.slice(i, idx), hit: false });
+    out.push({ text: text.slice(idx, idx + q.length), hit: true });
+    i = idx + q.length;
+  }
+  return out.length > 0 ? out : [{ text, hit: false }];
 }
 
 const VARIANT_CLASS: Record<TreeNodeShapeProps["variant"], string> = {
@@ -39,8 +65,12 @@ export function TreeNodeShape({
   isFocused,
   hasChildren,
   labelId,
+  highlightQuery,
 }: TreeNodeShapeProps) {
   const truncated = truncateTitle(title);
+  const segments = highlightQuery
+    ? splitHighlight(truncated, highlightQuery)
+    : null;
   const rx = height / 2;
 
   return (
@@ -74,7 +104,20 @@ export function TreeNodeShape({
         fill="currentColor"
         className="text-xs"
       >
-        {truncated}
+        {segments
+          ? segments.map((s, i) => (
+              <tspan
+                key={i}
+                style={
+                  s.hit
+                    ? { textDecoration: "underline", fontWeight: 700 }
+                    : undefined
+                }
+              >
+                {s.text}
+              </tspan>
+            ))
+          : truncated}
       </text>
       {isFocused ? (
         <rect

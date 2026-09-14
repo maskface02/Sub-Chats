@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ToastHost } from "@/components/chat/toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
         {children}
+        <ToastHost />
       </body>
     </html>
   );
