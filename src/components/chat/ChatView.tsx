@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { MessageList } from "./MessageList";
@@ -20,11 +20,13 @@ import type { EditSaveResult } from "./EditMessage";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { useSplit } from "@/lib/state/split";
 import { takePendingQuestion } from "@/lib/state/pending-question";
-import { invalidateTree } from "@/components/tree/useConversationTree";
-import { createChatAction } from "@/lib/api-client/auth";
+import { invalidateTree, useConversationTree } from "@/components/tree/useConversationTree";
+import { branchRanges, findTreeNode } from "./branchHighlights";
+import { createChat } from "@/lib/api-client/chats";
 import { editMessage, regenerateMessage } from "@/lib/api-client/messages";
 import type { Conversation, Message } from "@/lib/api-client/types";
 import { Button } from "@/components/ui/button";
+import { Columns2, GitBranch, MoreHorizontal } from "lucide-react";
 
 export interface ChatViewProps {
   conversation: Conversation;
@@ -32,7 +34,7 @@ export interface ChatViewProps {
    * When set, this ChatView renders inside a split-view pane (phase 2) and
    * participates in active-pane tracking instead of owning Split entry.
    */
-  pane?: { index: 1 | 2 };
+  pane?: { index: number; controls?: ReactNode };
   /**
    * Optional override: how to render breadcrumb ancestors when the API
    * does not return `parentTitle` / `rootTitle`. Caller can supply the chain
@@ -75,7 +77,12 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
   const split = useSplit();
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(conversation.messages);
+  const branchTree = useConversationTree(conversation.rootConversationId);
+  const directSubchats = branchTree.data ? findTreeNode(branchTree.data.root, conversation.id)?.children ?? [] : [];
+  const hasSubchats = directSubchats.length > 0;
+  const linkedBranches = branchRanges(messages, directSubchats);
   const [streaming, setStreaming] = useState<string>("");
+  const [recoveredDraft, setRecoveredDraft] = useState("");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -119,7 +126,7 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       start: (signal: AbortSignal) => Promise<Response>;
       isRetry?: boolean;
       /** Fires once the SSE stream is confirmed to have started. */
-      onStarted?: () => void;
+      onStarted?: (response: Response) => void;
     }): Promise<StreamResult> => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -136,6 +143,7 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         if (!res.ok) {
           const errBody = await safeJson(res);
           const err = extractError(errBody);
+          setStatus({ kind: "error", message: err.message ?? friendlyMessageForCode(err.code, res.status) });
           return {
             kind: "immediate-failure",
             code: err.code,
@@ -152,14 +160,15 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
           };
         }
 
-        opts.onStarted?.();
+        opts.onStarted?.(res);
+        window.dispatchEvent(new Event("chat-history-changed"));
 
         const isDataStream =
           (res.headers.get("content-type") ?? "").includes("text/plain") ||
           res.headers.get(STREAM_HEADER) !== null;
 
         setStatus({ kind: "streaming" });
-        streamingIdRef.current = makeId("a");
+        streamingIdRef.current = res.headers.get("X-Assistant-Message-Id") ?? makeId("a");
 
         if (isDataStream) {
           await consumeDataStream(res.body, {
@@ -178,6 +187,7 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         }
 
         streamFinished = true;
+        window.dispatchEvent(new Event("chat-history-changed"));
         setMessages((prev) => [
           ...prev,
           {
@@ -245,6 +255,12 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       };
       setMessages((prev) => [...prev, userMessage]);
       const result = await runStream({
+        onStarted: (response) => {
+          const savedId = response.headers.get("X-User-Message-Id");
+          if (savedId) setMessages((prev) => prev.map((message) =>
+            message.id === userMsgId ? { ...message, id: savedId } : message,
+          ));
+        },
         start: (signal) =>
           fetch(`/api/chats/${encodeURIComponent(conversation.id)}/messages`, {
             method: "POST",
@@ -259,7 +275,11 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       if (result.kind === "immediate-failure") {
         // The optimistic user message never reached the DB — drop it.
         setMessages((prev) => prev.filter((m) => m.id !== userMsgId));
+        setStatus({ kind: "error", message: result.message });
+        setRecoveredDraft(trimmed);
+        return false;
       }
+      return true;
     },
     [conversation.id, runStream],
   );
@@ -288,12 +308,14 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
   // Question-dialog hand-off: a sub-chat created via the selection dialog
   // carries its question here; consume-once (get+clear) auto-sends it through
   // the normal streaming path on first mount.
-  const pendingQuestionRef = useRef(false);
   useEffect(() => {
-    if (pendingQuestionRef.current) return;
-    pendingQuestionRef.current = true;
-    const question = takePendingQuestion(conversation.id);
-    if (question) void send(question);
+    // Consume after mount settles: Strict Mode replays effects, and consuming
+    // synchronously would lose the question when the first request is aborted.
+    const timer = window.setTimeout(() => {
+      const question = takePendingQuestion(conversation.id);
+      if (question) void send(question);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [conversation.id, send]);
 
   // US-407: save truncates the local tail immediately, then the SSE response
@@ -417,12 +439,8 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       split.closeSplit();
       return;
     }
-    if (!conversation.parentId) {
-      showToast({ message: "This chat has no parent", role: "status" });
-      return;
-    }
-    split.openSplit(conversation.id, conversation.parentId);
-  }, [split, conversation.id, conversation.parentId]);
+    if (hasSubchats) setPickerOpen(true);
+  }, [split, hasSubchats]);
 
   const handleEscapePane = useCallback(
     (paneIndex: 1 | 2): boolean => {
@@ -450,7 +468,14 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
     {
       onNewChat: () => {
         if (pendingNewChat) return; // dedupe while in flight (US-409 AC.3)
-        startNewChatTransition(() => createChatAction());
+        startNewChatTransition(async () => {
+          try {
+            const chat = await createChat();
+            router.push(`/c/${encodeURIComponent(chat.id)}`);
+          } catch {
+            showToast({ message: "Could not create a conversation — try again", role: "alert" });
+          }
+        });
       },
       onToggleSplit: handleToggleSplit,
       onShowShortcuts: () => setShortcutsOpen(true),
@@ -460,37 +485,52 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <Breadcrumb
-        items={breadcrumbOverride ?? buildBreadcrumb(conversation)}
-      />
-
-      <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-4">
-        <h1
-          ref={headerRef}
-          tabIndex={-1}
-          className="truncate text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={conversation.title}
-        >
-          {conversation.title || "New chat"}
-        </h1>
-        <span className="text-xs text-muted-foreground">
-          {messages.length} {messages.length === 1 ? "message" : "messages"}
-        </span>
-        {!pane ? (
-          <>
-            <button
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background/40">
+      <header className={pane
+        ? "flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-card px-3"
+        : "flex min-h-[64px] shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/70 px-4 backdrop-blur-lg sm:px-6"}>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1
+                ref={headerRef}
+                tabIndex={-1}
+                className={pane
+                  ? "truncate text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  : "truncate text-[15px] font-semibold tracking-[-0.015em] outline-none focus-visible:ring-2 focus-visible:ring-ring"}
+                title={conversation.title}
+              >
+                {conversation.title || "New chat"}
+              </h1>
+              {isSubChat && !pane ? (
+                <span className="hidden items-center gap-1 rounded-full bg-primary/[0.08] px-2 py-0.5 text-[10px] font-semibold text-primary sm:inline-flex">
+                  <GitBranch className="h-2.5 w-2.5" /> Branch
+                </span>
+              ) : null}
+            </div>
+            {!pane && <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {messages.length === 0
+                ? "Ready for a new idea"
+                : `${messages.length} ${messages.length === 1 ? "message" : "messages"}`}
+            </p>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {pane?.controls}
+          {(!pane || pane.index > 0) ? <>
+            {!pane && hasSubchats && <button
               ref={splitButtonRef}
               type="button"
               onClick={() => setPickerOpen(true)}
               disabled={isBusy}
-              className="hidden rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:inline-flex"
+              className="hidden h-9 items-center gap-1.5 rounded-xl border border-input bg-card/70 px-3 text-xs font-semibold text-muted-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:inline-flex"
               aria-haspopup="dialog"
             >
+              <Columns2 className="h-3.5 w-3.5" />
               Split
-            </button>
+            </button>}
             <SplitPicker
-              open={pickerOpen}
+              open={pickerOpen && hasSubchats}
               onOpenChange={(nextOpen) => {
                 setPickerOpen(nextOpen);
                 if (!nextOpen) {
@@ -506,26 +546,16 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
                   type="button"
                   aria-label="Conversation menu"
                   aria-haspopup="menu"
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-input bg-card/70 text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 16 16"
-                    aria-hidden="true"
-                    fill="currentColor"
-                  >
-                    <circle cx="8" cy="3" r="1.4" />
-                    <circle cx="8" cy="8" r="1.4" />
-                    <circle cx="8" cy="13" r="1.4" />
-                  </svg>
+                  <MoreHorizontal className="h-4 w-4" />
                 </button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content
                   align="end"
                   sideOffset={6}
-                  className="z-50 min-w-[12rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                  className="z-50 min-w-[13rem] animate-soft-pop rounded-2xl border bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl"
                 >
                   <ExportMenuItems conversationId={conversation.id} />
                   <DropdownMenu.Separator className={MENU_SEPARATOR_CLASS} />
@@ -543,10 +573,19 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
-          </>
-        ) : null}
+          </> : null}
+        </div>
       </header>
 
+      <div
+        ref={scrollRef}
+        data-testid="chat-scroll-area"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+      >
+      {isSubChat && <Breadcrumb items={breadcrumbOverride ?? buildBreadcrumb(conversation)} />}
       {isSubChat ? (
         <ParentContextBanner
           highlightText={conversation.highlightText}
@@ -557,14 +596,9 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         />
       ) : null}
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto"
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions text"
-      >
         <MessageList
+          branches={linkedBranches}
+          conversationId={conversation.id}
           messages={messages}
           streamingContent={status.kind === "streaming" ? streaming : null}
           streamingId={streamingIdRef.current}
@@ -598,7 +632,10 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
       ) : null}
 
       <Composer
-        onSend={(c) => void send(c)}
+        key={conversation.id}
+        draftKey={`chat-draft:${conversation.id}`}
+        recoveredDraft={recoveredDraft}
+        onSend={send}
         disabled={isBusy}
         streaming={isBusy}
         onStop={handleStop}
@@ -612,7 +649,7 @@ export function ChatView({ conversation, breadcrumbOverride, pane }: ChatViewPro
         placeholder={composerPlaceholder}
       />
 
-      <SelectionMenu conversationId={conversation.id} paneIndex={pane?.index} />
+      <SelectionMenu conversationId={conversation.id} paneIndex={pane?.index} enabled={!pane || pane.index > 0} />
 
       {isPrimaryPane ? (
         <>
@@ -800,7 +837,8 @@ function handleDataStreamLine(
       const text = JSON.parse(payload) as string;
       if (typeof text === "string") onTextDelta(text);
     } catch {}
-  } else if (prefix === "3" || prefix === "e") {
+  // AI SDK v4: `e` is finish_step, not an error. Only `3` is an error frame.
+  } else if (prefix === "3") {
     try {
       const msg = JSON.parse(payload) as unknown;
       const text =

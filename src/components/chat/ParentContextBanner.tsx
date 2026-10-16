@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { ChevronDown, GitBranch, Quote } from "lucide-react";
 
 export interface ParentContextBannerProps {
   highlightText: string | null;
@@ -38,22 +39,27 @@ export function ParentContextBanner({
     <section
       aria-label="Parent context"
       data-testid="parent-context-banner"
-      className="border-b bg-muted/30 px-4 py-3"
+      className="border-b border-primary/10 bg-gradient-to-r from-primary/[0.055] via-violet-500/[0.035] to-transparent px-4 py-3 sm:px-6"
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-2">
+      <div className="mx-auto flex max-w-4xl flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              About
-              {parentTitle ? (
-                <span className="ml-1 normal-case tracking-normal text-foreground/80">
-                  · from {parentTitle}
-                </span>
-              ) : null}
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <GitBranch className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/80">
+                Branched thought
+                {parentTitle ? (
+                  <span className="ml-1 normal-case tracking-normal text-muted-foreground">
+                    · from {parentTitle}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 line-clamp-2 break-words text-sm font-medium text-foreground">
+                {label ? `“${label}”` : "(no highlight)"}
+              </p>
             </div>
-            <p className="mt-0.5 text-sm font-medium text-foreground break-words">
-              {label ? `“${label}”` : "(no highlight)"}
-            </p>
           </div>
           {hasPreview ? (
             <button
@@ -62,11 +68,12 @@ export function ParentContextBanner({
               aria-controls="parent-context-banner-content"
               onClick={() => setExpanded((v) => !(v ?? false))}
               className={cn(
-                "shrink-0 rounded-md border bg-background px-2 py-1 text-xs font-medium",
-                "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "inline-flex shrink-0 items-center gap-1.5 rounded-xl border bg-background/75 px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-sm",
+                "transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               )}
             >
               {isOpen ? "Hide source" : "Show source"}
+              <ChevronDown className={cn("h-3 w-3 transition-transform duration-200", isOpen && "rotate-180")} />
             </button>
           ) : null}
         </div>
@@ -74,8 +81,9 @@ export function ParentContextBanner({
           <div
             id="parent-context-banner-content"
             data-testid="parent-context-banner-content"
-            className="rounded-md border bg-background/70 p-3 text-sm leading-relaxed text-foreground/90"
+            className="animate-enter ml-11 rounded-2xl border border-border/70 bg-background/75 p-3.5 text-sm leading-6 text-foreground/90 shadow-sm"
           >
+            <Quote className="mb-1.5 h-3.5 w-3.5 text-primary/60" />
             {renderHighlightedPreview(
               preview.length > PREVIEW_LIMIT
                 ? preview.slice(0, PREVIEW_LIMIT)

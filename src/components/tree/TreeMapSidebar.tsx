@@ -1,4 +1,5 @@
 "use client";
+import { createPortal } from "react-dom";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -32,7 +33,7 @@ export interface TreeMapSidebarProps {
   onClose?: () => void;
 }
 
-const SIDEBAR_WIDTH = 260;
+const SIDEBAR_WIDTH = 280;
 const NODE_SPACING_X = TREE_NODE_WIDTH + 24;
 const NODE_SPACING_Y = TREE_NODE_HEIGHT + 22;
 const MARGIN = 16;
@@ -60,7 +61,7 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
   const router = useRouter();
   const split = useSplit();
   const rootId = conversation.rootConversationId || conversation.id;
-  const { data, isLoading, isError, error, refetch } = useConversationTree(rootId);
+  const { data, isLoading, isError, error, refetch } = useConversationTree(conversation.id);
   const currentId = data ? data.currentId : conversation.id;
 
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -293,13 +294,13 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
       ref={containerRef}
       role={variant === "drawer" ? "dialog" : "complementary"}
       aria-label="Conversation tree"
-      className={cn("flex flex-col overflow-hidden bg-background", variantClass(variant))}
+      className={cn("flex flex-col overflow-hidden bg-card/45", variantClass(variant))}
       style={{ width: variant === "panel" ? SIDEBAR_WIDTH : undefined }}
       aria-busy={ariaBusy}
     >
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Tree
+      <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Branch map
         </span>
         {variant === "drawer" ? (
           <button
@@ -313,7 +314,7 @@ function SidebarInner({ conversation, variant = "panel", onClose }: TreeMapSideb
         ) : null}
       </div>
 
-      <div className="border-b px-3 py-2">
+      <div className="border-b border-border/70 px-3 py-3">
         <input
           ref={searchRef}
           type="search"
@@ -765,7 +766,7 @@ function Edge({ from, to }: { from: Positioned; to: Positioned }) {
 
 function variantClass(variant: "panel" | "drawer"): string {
   if (variant === "panel") return "w-full";
-  return "h-full w-full max-w-[20rem] shadow-xl motion-safe:animate-in motion-safe:slide-in-from-left";
+  return "h-full w-full max-w-[20rem] animate-drawer-in shadow-xl";
 }
 
 function findLayoutNode(
@@ -819,25 +820,26 @@ export function TreeDrawer({
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+        className="h-9 rounded-lg px-3 text-xs font-medium text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        Tree
+        Branch map
       </button>
-      {open ? (
-        <div className="fixed inset-0 z-50 md:hidden">
+      {open ? createPortal(
+        <div className="fixed inset-0 z-50">
           <div
             className="absolute inset-0 bg-foreground/40"
             aria-hidden="true"
             onClick={close}
           />
-          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw]">
+          <div className="absolute inset-y-0 right-0 flex w-80 max-w-[90vw] animate-fade-in bg-background shadow-xl">
             <TreeMapSidebar
               conversation={conversation}
               variant="drawer"
               onClose={close}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </>
   );

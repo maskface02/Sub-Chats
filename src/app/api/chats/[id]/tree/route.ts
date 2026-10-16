@@ -71,6 +71,9 @@ async function getTree(
       depth: conversations.depth,
       parentId: conversations.parentId,
       highlightText: conversations.highlightText,
+      sourceMessageId: conversations.sourceMessageId,
+      sourceStart: conversations.sourceStart,
+      sourceEnd: conversations.sourceEnd,
       createdAt: conversations.createdAt,
     })
     .from(conversations)
@@ -91,6 +94,9 @@ async function getTree(
       title: r.title,
       depth: r.depth,
       highlightText: r.highlightText,
+      sourceMessageId: r.sourceMessageId,
+      sourceStart: r.sourceStart,
+      sourceEnd: r.sourceEnd,
       createdAt: r.createdAt.toISOString(),
       children: [],
     });

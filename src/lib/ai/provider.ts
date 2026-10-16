@@ -9,6 +9,7 @@ import { decrypt } from "@/lib/crypto/encrypt";
 import { assertSendTimeAllowed, SsrfBlockedError, ssrfSafeFetch } from "./ssrf-guard";
 import { allowOllamaUsers } from "@/lib/config/flags";
 import { log } from "@/lib/log";
+import { isNvidiaEndpoint, NVIDIA_BASE_URL, NVIDIA_MODEL, NVIDIA_GENERATION_SETTINGS } from "./nvidia";
 
 export type ProviderType = "openai" | "anthropic" | "ollama" | "custom";
 export type ProviderSource = "user" | "env";
@@ -21,6 +22,7 @@ export type Provider = {
   model: LanguageModelV1;
   baseUrl?: string;
   source: ProviderSource;
+  generationSettings?: { temperature: number; topP: number; maxTokens: number };
 };
 
 export { SsrfBlockedError };
@@ -67,6 +69,23 @@ async function listOllamaModels(baseUrl: string): Promise<string[]> {
 }
 
 async function resolveFromEnv(): Promise<Provider | null> {
+  if (process.env.NVIDIA_API_KEY) {
+    log.info({ provider: "nvidia", model: NVIDIA_MODEL, source: "env" }, "AI provider resolved");
+    return {
+      type: "custom",
+      id: "env:nvidia",
+      modelId: NVIDIA_MODEL,
+      baseUrl: NVIDIA_BASE_URL,
+      model: createOpenAI({
+        name: "nvidia",
+        baseURL: NVIDIA_BASE_URL,
+        apiKey: process.env.NVIDIA_API_KEY,
+      })(NVIDIA_MODEL),
+      source: "env",
+      generationSettings: NVIDIA_GENERATION_SETTINGS,
+    };
+  }
+
   if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0) {
     const modelId = DEFAULT_OPENAI_MODEL;
     log.info({ provider: "openai", model: modelId, source: "env" }, "AI provider resolved");
@@ -113,6 +132,7 @@ async function resolveFromEnv(): Promise<Provider | null> {
 
   log.warn(
     {
+      hasNvidia: Boolean(process.env.NVIDIA_API_KEY),
       hasOpenAI: Boolean(process.env.OPENAI_API_KEY),
       hasAnthropic: Boolean(process.env.ANTHROPIC_API_KEY),
       baseUrl,
@@ -166,6 +186,9 @@ function buildFromRow(row: ProviderRowLike, key: string | null): Provider {
     id: row.id,
     modelId,
     baseUrl: row.baseUrl,
+    generationSettings: isNvidiaEndpoint(row.baseUrl) && modelId === NVIDIA_MODEL
+      ? NVIDIA_GENERATION_SETTINGS
+      : undefined,
     model: createOpenAI({
       name: row.type,
       baseURL: row.baseUrl,
@@ -179,7 +202,7 @@ function buildFromRow(row: ProviderRowLike, key: string | null): Provider {
 /**
  * Per-request provider resolution (US-304). Order:
  * 1. the user's isDefault provider row (single indexed query)
- * 2. env chain: OPENAI_API_KEY → ANTHROPIC_API_KEY → reachable OLLAMA_BASE_URL → null
+ * 2. env chain: NVIDIA_API_KEY → OPENAI_API_KEY → ANTHROPIC_API_KEY → reachable OLLAMA_BASE_URL → null
  *
  * Corrupt user-row state (decrypt failure, missing key/baseUrl/model) logs at
  * error level and falls through to the env chain (US-304 AC.4).
@@ -243,7 +266,7 @@ export function noProvider(): { code: "NO_PROVIDER"; message: string } {
   return {
     code: "NO_PROVIDER",
     message:
-      "No AI provider configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or run Ollama locally.",
+      "No AI provider configured. Set NVIDIA_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or run Ollama locally.",
   };
 }
 

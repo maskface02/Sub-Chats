@@ -12,6 +12,9 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { cn } from "@/lib/utils";
+import { sourcePositions } from "./sourcePositions";
+import { BranchHighlight } from "@/components/chat/BranchHighlight";
+import type { BranchRange } from "@/components/chat/branchHighlights";
 
 type PreProps = { children?: ReactNode };
 
@@ -111,11 +114,11 @@ const components: Components = {
 
 /**
  * Safe react-markdown wrapper. rehype-highlight (CSS-class based, detect
- * disabled — US-406) is the ONLY rehype plugin; no rehype-raw and never
+ * disabled — US-406) and source-coordinate spans are the rehype plugins; no rehype-raw and never
  * dangerouslySetInnerHTML: AI output is untrusted and raw HTML must degrade
  * to text. The default urlTransform neutralizes javascript:/data: URIs.
  */
-export const Markdown = memo(function Markdown({ content }: { content: string }) {
+export const Markdown = memo(function Markdown({ content, branches = [], parentId = "" }: { content: string; branches?: BranchRange[]; parentId?: string }) {
   return (
     <div
       className={cn(
@@ -135,8 +138,13 @@ export const Markdown = memo(function Markdown({ content }: { content: string })
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { detect: false }]]}
-        components={components}
+        rehypePlugins={[[sourcePositions, { ranges: branches }], [rehypeHighlight, { detect: false }]]}
+        components={{ ...components, span: ({ node, children, ...props }) => {
+          const ids = String(node?.properties?.["data-branch-ids"] ?? "").split(",");
+          const linked = branches.filter(r => ids.includes(r.branch.id)).map(r => r.branch);
+          return linked.length ? <BranchHighlight branches={linked} parentId={parentId}
+            start={Number(node?.properties?.["data-source-start"])} end={Number(node?.properties?.["data-source-end"])}>{children}</BranchHighlight> : <span {...props}>{children}</span>;
+        } }}
       >
         {content}
       </ReactMarkdown>

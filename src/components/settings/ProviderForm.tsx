@@ -6,6 +6,8 @@ import { ApiError } from "@/lib/api-client/base";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import Link from "next/link";
+import { NVIDIA_BASE_URL, NVIDIA_MODEL, isNvidiaEndpoint } from "@/lib/ai/nvidia";
 import type {
   ProviderCreateBody,
   ProviderDto,
@@ -22,6 +24,13 @@ export interface ProviderFormProps {
 }
 
 type Field = "baseUrl" | "apiKey" | "defaultModel";
+const PROVIDER_CHOICES = [
+  ["openai", "OpenAI"],
+  ["anthropic", "Anthropic"],
+  ["nvidia", "NVIDIA NIM"],
+  ["ollama", "Ollama"],
+  ["custom", "Custom endpoint"],
+] as const;
 
 const TYPE_DEFAULT_MODEL: Record<
   Exclude<ProviderCreateBody["type"], undefined>,
@@ -66,6 +75,9 @@ export function ProviderForm({
     provider?.type ?? "openai",
   );
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
+  const [choice, setChoice] = useState<string>(
+    provider?.type === "custom" && isNvidiaEndpoint(provider.baseUrl) ? "nvidia" : provider?.type ?? "openai",
+  );
   const [apiKey, setApiKey] = useState("");
   const [defaultModel, setDefaultModel] = useState(
     provider?.defaultModel ?? "",
@@ -138,7 +150,9 @@ export function ProviderForm({
       }
       onSaved(!editing);
     } catch (err) {
-      if (err instanceof ApiError && err.fields) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError("form", "Your session has expired. Sign in again before saving your provider.");
+      } else if (err instanceof ApiError && err.fields) {
         const mapped: Partial<Record<Field | "form", string>> = {};
         (Object.keys(err.fields) as Array<keyof typeof err.fields>).forEach((f) => {
           const key = f as Field;
@@ -173,23 +187,32 @@ export function ProviderForm({
       </h3>
 
       {!editing ? (
-        <div className="mb-3">
-          <Label htmlFor="p-type">Type</Label>
-          <select
-            id="p-type"
-            value={type}
-            onChange={(e) => {
-              setType(e.target.value as ProviderCreateBody["type"]);
-              setErrors({});
-            }}
-            className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="ollama">Ollama</option>
-            <option value="custom">Custom (base URL)</option>
-          </select>
-        </div>
+        <fieldset className="mb-4" disabled={saving}>
+          <legend className="mb-2 text-sm font-medium">Provider</legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {PROVIDER_CHOICES.map(([value, label]) => (
+              <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-ring ${choice === value ? "border-primary bg-primary/5 text-primary" : "border-input hover:bg-muted"}`}>
+                <input
+                  type="radio"
+                  name="providerType"
+                  value={value}
+                  checked={choice === value}
+                  onChange={() => {
+                    setChoice(value);
+                    setType(value === "nvidia" ? "custom" : value);
+                    setBaseUrl(value === "nvidia" ? NVIDIA_BASE_URL : "");
+                    setDefaultModel(value === "nvidia" ? NVIDIA_MODEL : "");
+                    setApiKey("");
+                    setErrors({});
+                  }}
+                  className="accent-primary"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">Choose a provider before entering its key. Switching providers clears the key for safety.</p>
+        </fieldset>
       ) : (
         <div className="mb-3 text-sm">
           <span className="text-muted-foreground">Type: </span>
@@ -204,6 +227,13 @@ export function ProviderForm({
           ? "Base URL field shown"
           : "Base URL field hidden"}
       </p>
+
+      {type === "custom" && isNvidiaEndpoint(baseUrl) ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          NVIDIA's OpenAI-compatible endpoint. Enter your NVIDIA API key below.
+          Keys are encrypted on the server. Trial access and rate limits are managed by NVIDIA.
+        </p>
+      ) : null}
 
       {showsBaseUrl ? (
         <div className="mb-3">
@@ -284,6 +314,9 @@ export function ProviderForm({
       {errors.form ? (
         <p role="alert" className="mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errors.form}
+          {errors.form.startsWith("Your session has expired") ? (
+            <Link href="/signin" className="ml-2 underline">Sign in</Link>
+          ) : null}
         </p>
       ) : null}
 

@@ -15,7 +15,11 @@ function makeDb(): Db {
   return isPostgresUrl ? makePostgresDb(DATABASE_URL) : makePgliteDb();
 }
 
-export const db: Db = globalThis.__dbInstance ?? (globalThis.__dbInstance = makeDb());
+// Re-enter the PGlite factory after an additive schema change during hot reload.
+// It reuses the existing client and issues the idempotent bootstrap first.
+export const db: Db = (!isPostgresUrl && globalThis.__pgliteSchemaVersion !== 2)
+  ? (globalThis.__dbInstance = makeDb())
+  : globalThis.__dbInstance ?? (globalThis.__dbInstance = makeDb());
 
 // Resolves once the pglite schema bootstrap has been issued (no-op promise on
 // the postgres path — migrations there are managed by drizzle-kit migrate).

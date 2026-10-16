@@ -71,13 +71,10 @@ export function ProviderList() {
     }
   };
 
-  const handleSaved = (created: boolean) => {
+  const handleSaved = (_created: boolean) => {
     setAdding(false);
     setEditing(null);
-    showToast({
-      kind: "success",
-      text: created ? "Provider added" : "Provider saved",
-    });
+    showToast({ kind: "success", text: "Provider saved" });
     refetch();
   };
 
@@ -130,8 +127,8 @@ export function ProviderList() {
 
   return (
     <section aria-label="AI providers" data-testid="providers-list">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Your providers</h2>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Your providers</h2>
         {!formOpen ? (
           <div>
             <Button
@@ -153,7 +150,7 @@ export function ProviderList() {
 
       {!hasDefault ? (
         <p
-          className="mb-3 rounded-md border bg-muted px-3 py-2 text-xs text-muted-foreground"
+          className="mb-4 rounded-xl border border-primary/10 bg-primary/[0.05] px-3.5 py-2.5 text-xs text-muted-foreground"
           data-testid="env-default-indicator"
         >
           Using server default (environment)
@@ -161,9 +158,14 @@ export function ProviderList() {
       ) : null}
 
       {items.length === 0 && !formOpen ? (
-        <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
-          No custom providers. You&apos;re using the server default (environment).
-        </p>
+        <div className="rounded-2xl border border-dashed bg-muted/25 px-5 py-8 text-center">
+          <p className="text-sm font-semibold text-foreground">
+            No custom providers. You&apos;re using the server default (environment).
+          </p>
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
+            You&apos;re using the server default. Add a provider to choose your own model and key.
+          </p>
+        </div>
       ) : null}
 
       {items.length > 0 ? (
@@ -172,7 +174,7 @@ export function ProviderList() {
             <li
               key={p.id}
               data-testid="provider-row"
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/60 px-4 py-3 shadow-sm transition-colors hover:border-primary/20"
             >
               <div className="flex min-w-0 items-center gap-3">
                 <fieldset className="w-14">
@@ -196,7 +198,7 @@ export function ProviderList() {
                   </label>
                 </fieldset>
                 <span
-                  className="rounded bg-muted px-2 py-0.5 text-xs font-semibold uppercase text-foreground dark:bg-muted/60"
+                  className="rounded-lg bg-secondary px-2.5 py-1 text-[11px] font-semibold uppercase text-secondary-foreground dark:bg-muted/60"
                   aria-label={`Provider type ${p.type}`}
                 >
                   {p.type}
@@ -256,9 +258,6 @@ export function ProviderList() {
         <DeleteProviderDialog provider={deleting} onClosed={handleDeleted} />
       ) : null}
 
-      <p aria-live="polite" className="sr-only">
-        {toast ? toast.text : ""}
-      </p>
       {toast ? (
         <div
           role={toast.kind === "error" ? "alert" : "status"}

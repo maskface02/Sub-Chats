@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import { useSearchParams } from "next/navigation";
 import { signUpAction } from "@/lib/api-client/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,15 +28,13 @@ function SubmitButton() {
   );
 }
 
-export default function SignUpPage({
-  searchParams,
-}: {
-  searchParams?: { callbackUrl?: string };
-}) {
+export default function SignUpPage() {
   const [state, action] = useActionState(signUpAction, INITIAL);
+  const searchParams = useSearchParams();
+  const requestedCallback = searchParams.get("callbackUrl");
   const callbackUrl =
-    searchParams?.callbackUrl && searchParams.callbackUrl.startsWith("/")
-      ? searchParams.callbackUrl
+    requestedCallback && requestedCallback.startsWith("/")
+      ? requestedCallback
       : "/";
 
   const fieldErrors =
@@ -43,11 +42,12 @@ export default function SignUpPage({
   const formError = "formError" in state ? state.formError : undefined;
 
   return (
-    <Card>
+    <Card className="border-border/60">
       <CardHeader>
-        <CardTitle className="text-xl">Create your account</CardTitle>
+        <div className="mb-2 grid h-10 w-10 place-items-center rounded-2xl bg-primary/10 text-lg">✨</div>
+        <CardTitle className="text-2xl tracking-[-0.03em]">Create your account</CardTitle>
         <CardDescription>
-          Email + password. No verification, no fuss.
+          Your next great idea deserves room to branch.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -68,6 +68,7 @@ export default function SignUpPage({
               name="name"
               type="text"
               autoComplete="name"
+              placeholder="How should we call you?"
               aria-invalid={Boolean(fieldErrors.name)}
             />
             {fieldErrors.name ? (
@@ -82,6 +83,7 @@ export default function SignUpPage({
               type="email"
               autoComplete="email"
               required
+              placeholder="you@example.com"
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? "email-err" : undefined}
             />
@@ -100,6 +102,7 @@ export default function SignUpPage({
               autoComplete="new-password"
               required
               minLength={8}
+              placeholder="At least 8 characters"
               aria-invalid={Boolean(fieldErrors.password)}
               aria-describedby={
                 fieldErrors.password ? "password-err" : "password-hint"
@@ -123,6 +126,7 @@ export default function SignUpPage({
               type="password"
               autoComplete="new-password"
               required
+              placeholder="Repeat your password"
               aria-invalid={Boolean(fieldErrors.confirmPassword)}
               aria-describedby={
                 fieldErrors.confirmPassword ? "confirm-err" : undefined

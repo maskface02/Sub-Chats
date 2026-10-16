@@ -248,6 +248,9 @@ export type RegenerateRequest = z.infer<typeof RegenerateRequestSchema>;
 // ---------- tree (phase 2) ----------
 
 export interface TreeNodeDto {
+  sourceMessageId?: string | null;
+  sourceStart?: number | null;
+  sourceEnd?: number | null;
   id: string;
   title: string;
   depth: number;

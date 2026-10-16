@@ -75,6 +75,9 @@ export interface CreateChatResponse {
 }
 
 export interface TreeNodeDto {
+  sourceMessageId?: string | null;
+  sourceStart?: number | null;
+  sourceEnd?: number | null;
   id: string;
   title: string;
   depth: number;
@@ -90,7 +93,7 @@ export interface TreeResponse {
   truncated: boolean;
 }
 
-export type ProviderType = "openai" | "ollama" | null;
+export type ProviderType = "openai" | "anthropic" | "ollama" | "custom" | null;
 
 export interface ProviderInfo {
   type: ProviderType;

@@ -148,7 +148,13 @@ async function ensureGuestUserId(): Promise<string> {
  */
 export async function auth() {
   const session = await authFn();
-  if (session?.user?.id) return session;
+  if (session?.user?.id) {
+    const existing = await db.select({ id: users.id }).from(users)
+      .where(eq(users.id, session.user.id)).limit(1);
+    // A JWT can outlive a reset database or a deleted account.
+    // Never treat it as authorization to create rows for a missing user.
+    return existing.length > 0 ? session : null;
+  }
   if (allowGuestAccess()) {
     const guestId = await ensureGuestUserId();
     return {

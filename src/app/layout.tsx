@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { ToastHost } from "@/components/chat/toast";
+import { ThemeRuntime } from "@/components/settings/ThemeRuntime";
+import { themeBootstrapScript } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,7 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-background font-sans antialiased">
+      <head><script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} /></head>
+      <body className="min-h-screen bg-background antialiased">
+        <ThemeRuntime />
         {children}
         <ToastHost />
       </body>

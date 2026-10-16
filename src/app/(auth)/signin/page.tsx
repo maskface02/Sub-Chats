@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import { useSearchParams } from "next/navigation";
 import { signInAction } from "@/lib/api-client/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,15 +28,13 @@ function SubmitButton() {
   );
 }
 
-export default function SignInPage({
-  searchParams,
-}: {
-  searchParams?: { callbackUrl?: string };
-}) {
+export default function SignInPage() {
   const [state, action] = useActionState(signInAction, INITIAL);
+  const searchParams = useSearchParams();
+  const requestedCallback = searchParams.get("callbackUrl");
   const callbackUrl =
-    searchParams?.callbackUrl && searchParams.callbackUrl.startsWith("/")
-      ? searchParams.callbackUrl
+    requestedCallback && requestedCallback.startsWith("/")
+      ? requestedCallback
       : "/";
 
   const fieldErrors =
@@ -43,11 +42,12 @@ export default function SignInPage({
   const formError = "formError" in state ? state.formError : undefined;
 
   return (
-    <Card>
+    <Card className="border-border/60">
       <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
+        <div className="mb-2 grid h-10 w-10 place-items-center rounded-2xl bg-primary/10 text-lg">👋</div>
+        <CardTitle className="text-2xl tracking-[-0.03em]">Welcome back</CardTitle>
         <CardDescription>
-          Welcome back — sign in to access your conversations.
+          Sign in to continue exploring your conversations.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -69,6 +69,7 @@ export default function SignInPage({
               type="email"
               autoComplete="email"
               required
+              placeholder="you@example.com"
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? "email-err" : undefined}
             />
@@ -86,6 +87,7 @@ export default function SignInPage({
               type="password"
               autoComplete="current-password"
               required
+              placeholder="••••••••"
               aria-invalid={Boolean(fieldErrors.password)}
               aria-describedby={
                 fieldErrors.password ? "password-err" : undefined

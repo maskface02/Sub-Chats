@@ -9,6 +9,8 @@ import {
 } from "@/lib/state/pending-question";
 import { invalidateTree } from "@/components/tree/useConversationTree";
 import { ApiError } from "@/lib/api-client/base";
+import { useSplit } from "@/lib/state/split";
+import { createPortal } from "react-dom";
 
 const PILL_VERTICAL_GAP = 8;
 const PILL_HORIZONTAL_PADDING = 8;
@@ -56,7 +58,7 @@ export interface SelectionMenuProps {
    * register if they fall inside that pane's DOM subtree, keeping multiple
    * simultaneous instances isolated (US-205 AC.5).
    */
-  paneIndex?: 1 | 2;
+  paneIndex?: number;
 }
 
 export function SelectionMenu({
@@ -64,6 +66,7 @@ export function SelectionMenu({
   enabled = true,
   paneIndex,
 }: SelectionMenuProps) {
+  const split = useSplit();
   const router = useRouter();
   const [pill, setPill] = useState<PillState>({ kind: "hidden" });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -127,7 +130,7 @@ export function SelectionMenu({
       debounceTimerRef.current = null;
       handleSelectionDetected(detectSelection(paneIndex));
     }, SELECTION_DEBOUNCE_MS);
-  }, [enabled, handleSelectionDetected]);
+  }, [enabled, paneIndex, handleSelectionDetected]);
 
   // Global listeners: selectionchange, mouseup, keyup, scroll, resize
   useEffect(() => {
@@ -288,14 +291,17 @@ export function SelectionMenu({
         setPendingQuestion(result.id, question);
         // A new sub-chat appeared in the tree map — refetch (US-202 AC.3).
         invalidateTree();
-        router.push(`/c/${encodeURIComponent(result.id)}`);
+        setPill({ kind: "hidden" });
+        latestSelectionRef.current = null;
+        window.getSelection()?.removeAllRanges();
+        split.openBranch(conversationId, result.id);
       } catch (err) {
         const message =
           err instanceof ApiError
             ? err.code === "NOT_FOUND"
               ? "Could not create sub-chat — try again"
               : err.code === "INVALID_SELECTION"
-                ? "Could not create sub-chat — try again"
+                ? Object.values(err.fields ?? {})[0] ?? "Select text within the response and try again."
                 : err.code === "RATE_LIMITED"
                   ? "Too many sub-chats — try again later"
                   : "Could not create sub-chat — try again"
@@ -390,9 +396,8 @@ export function SelectionMenu({
             onClick={onPillClick}
             onKeyDown={onPillKeyDown}
             className={cn(
-              "pointer-events-auto inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-xs font-medium shadow-md",
-              "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1",
+              "pointer-events-auto inline-flex animate-soft-pop items-center gap-1.5 rounded-full border border-primary/15 bg-background/95 px-3 py-1.5 text-xs font-semibold text-primary shadow-lg shadow-primary/10 backdrop-blur-lg",
+              "transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             )}
           >
             {pill.kind === "loading" ? (
@@ -417,8 +422,7 @@ export function SelectionMenu({
           aria-label="Sub-chat about selection, or copy"
           onKeyDown={onMenuKeyDown}
           className={cn(
-            "fixed z-50 min-w-[14rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-lg",
-            "motion-safe:animate-in motion-safe:fade-in",
+            "fixed z-50 min-w-[14rem] animate-soft-pop rounded-xl border bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl",
           )}
           style={{ top: menuPos.top, left: menuPos.left }}
         >
@@ -457,7 +461,7 @@ export function SelectionMenu({
         </div>
       ) : null}
 
-      {questionDialog ? (
+      {questionDialog ? createPortal(
         <SubChatQuestionDialog
           selection={questionDialog.selection}
           pending={pill.kind === "loading"}
@@ -465,7 +469,8 @@ export function SelectionMenu({
             void createSubChatWithQuestion(questionDialog.selection, question)
           }
           onCancel={() => setQuestionDialog(null)}
-        />
+        />,
+        document.body,
       ) : null}
     </>
   );
@@ -542,7 +547,7 @@ function SubChatQuestionDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 animate-fade-in bg-foreground/35 backdrop-blur-[2px]"
         onClick={pending ? undefined : onCancel}
       />
       <div
@@ -551,12 +556,12 @@ function SubChatQuestionDialog({
         aria-modal="true"
         aria-label="New sub-chat question"
         onKeyDown={onTrapKeyDown}
-        className="relative w-full max-w-md rounded-lg border bg-popover p-4 text-popover-foreground shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95"
+        className="relative w-full max-w-md animate-modal-in rounded-[1.5rem] border border-border/70 bg-popover/95 p-5 text-popover-foreground shadow-2xl backdrop-blur-xl"
       >
         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           New sub-chat about
         </p>
-        <p className="mb-3 line-clamp-2 rounded bg-muted px-2 py-1.5 text-sm italic text-muted-foreground">
+        <p className="mb-4 line-clamp-2 rounded-xl border border-primary/10 bg-primary/[0.05] px-3 py-2 text-sm italic text-muted-foreground">
           “{preview}”
         </p>
         <textarea
@@ -607,7 +612,7 @@ function SubChatQuestionDialog({
   );
 }
 
-function detectSelection(paneIndex?: 1 | 2): DetectedSelection | null {
+function detectSelection(paneIndex?: number): DetectedSelection | null {
   if (typeof window === "undefined") return null;
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
@@ -646,14 +651,31 @@ function detectSelection(paneIndex?: 1 | 2): DetectedSelection | null {
     | "system";
   if (!messageId) return null;
 
-  const sourceContent = collectBubbleText(anchorBubble);
+  const sourceContent = anchorBubble.dataset.messageSource ?? "";
   if (!sourceContent) return null;
 
-  const { charStart, charEnd } = computeCharOffsets(
-    anchorBubble,
-    range,
-    sourceContent,
-  );
+  const sourceOffset = (node: Node, offset: number): number | null => {
+    const el = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+    const span = el?.closest<HTMLElement>("[data-source-start]");
+    if (!span) return null;
+    const start = Number(span.dataset.sourceStart);
+    const end = Number(span.dataset.sourceEnd);
+    // Escaped/entities text has different source length; use exact-match fallback.
+    if (sourceContent.slice(start, end) !== span.textContent) return null;
+    const prefix = document.createRange();
+    prefix.selectNodeContents(span);
+    prefix.setEnd(node, offset);
+    return start + prefix.toString().length;
+  };
+  let charStart = sourceOffset(range.startContainer, range.startOffset);
+  let charEnd = sourceOffset(range.endContainer, range.endOffset);
+  if (charStart === null || charEnd === null) {
+    // Plain code text and element-boundary selections: never guess among duplicates.
+    const exact = sourceContent.indexOf(text);
+    if (exact < 0 || sourceContent.indexOf(text, exact + 1) !== -1) return null;
+    charStart = exact;
+    charEnd = exact + text.length;
+  }
   if (charStart < 0 || charEnd <= charStart) return null;
 
   const rect = range.getBoundingClientRect();
@@ -662,7 +684,7 @@ function detectSelection(paneIndex?: 1 | 2): DetectedSelection | null {
   return {
     messageId,
     messageRole,
-    text,
+    text: sourceContent.slice(charStart, charEnd),
     rect,
     charStart,
     charEnd,

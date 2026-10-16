@@ -1,14 +1,16 @@
 import { ProviderList } from "@/components/settings/ProviderList";
+import { ThemeSelector } from "@/components/settings/ThemeSelector";
 
 export const dynamic = "force-dynamic";
 
 export default function ProvidersSettingsPage() {
   return (
     <div>
-      <h2 className="mb-1 text-lg font-semibold">AI providers</h2>
-      <p className="mb-6 text-sm text-muted-foreground">
-        Add, edit, or remove AI providers. Your stored API keys are encrypted at
-        rest and never shown again — only the last 4 characters are displayed.
+      <ThemeSelector />
+      <h2 className="mb-1 mt-8 text-lg font-semibold tracking-tight">AI providers</h2>
+      <p className="mb-7 max-w-2xl text-sm leading-6 text-muted-foreground">
+        Choose which model powers your conversations. API keys are encrypted at
+        rest and only their final four characters remain visible.
       </p>
       <ProviderList />
     </div>

@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS providers (
 -- Phase 4 (0001_soft_delete): soft-delete columns + partial index swap.
 -- Idempotent so the bootstrap applies cleanly to fresh and pre-existing DBs.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_message_id text;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_start integer;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_end integer;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_batch_id text;
 DROP INDEX IF EXISTS conversations_user_updated_idx;
 CREATE INDEX IF NOT EXISTS conversations_user_updated_live_idx

@@ -15,6 +15,13 @@
       "when": 1789370507000,
       "tag": "0001_noop",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791820000000,
+      "tag": "0002_branch_sources",
+      "breakpoints": true
     }
   ]
 }

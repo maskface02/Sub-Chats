@@ -9,6 +9,7 @@ import { getConversationTree } from "@/lib/api-client/tree";
 import type { TreeNodeDto } from "@/lib/api-client/types";
 import { TreeQueryScope } from "@/components/tree/useConversationTree";
 import { formatRelativeTime, cn } from "@/lib/utils";
+import { NewChatButton } from "@/components/chat/NewChatButton";
 
 /**
  * Slide-in navigation sidebar (post-ship UX change): a file-explorer-style
@@ -79,7 +80,7 @@ export function ChatTreeSidebar({
       {open ? (
         <div className="fixed inset-0 z-50">
           <div
-            className="absolute inset-0 bg-foreground/40"
+            className="absolute inset-0 animate-fade-in bg-foreground/35 backdrop-blur-[2px]"
             aria-hidden="true"
             onClick={close}
           />
@@ -90,7 +91,7 @@ export function ChatTreeSidebar({
             aria-label="Conversation tree"
             tabIndex={-1}
             data-testid="chats-sidebar"
-            className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col border-r bg-background shadow-xl outline-none motion-safe:animate-in motion-safe:slide-in-from-left-10 motion-safe:duration-200"
+            className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] animate-drawer-in flex-col border-r border-border/70 bg-background/95 shadow-2xl outline-none backdrop-blur-xl"
           >
             <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
               <span className="text-sm font-semibold tracking-tight">
@@ -104,6 +105,9 @@ export function ChatTreeSidebar({
               >
                 ×
               </button>
+            </div>
+            <div className="border-b border-border/70 p-3">
+              <NewChatButton />
             </div>
             <ChatTreeList
               currentChatId={currentChatId ?? null}

@@ -21,9 +21,9 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
     <nav
       aria-label="Conversation path"
       data-testid="breadcrumb"
-      className="border-b bg-background/95 px-4 py-2 text-xs"
+      className="border-b border-border/60 bg-card/35 px-4 py-1.5 text-[11px] backdrop-blur-sm sm:px-6"
     >
-      <ol className="mx-auto flex max-w-3xl flex-wrap items-center gap-1 text-muted-foreground">
+      <ol className="mx-auto flex max-w-4xl flex-wrap items-center gap-1 text-muted-foreground">
         {items.map((item, idx) => {
           const isLast = idx === items.length - 1;
           const isCurrent = isLast;
@@ -38,7 +38,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
                 <span
                   aria-current={isCurrent ? "page" : undefined}
                   className={cn(
-                    "rounded px-1 py-0.5",
+                    "rounded-lg px-1.5 py-0.5",
                     isCurrent
                       ? "font-medium text-foreground"
                       : "text-muted-foreground",
@@ -51,7 +51,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
                 <Link
                   href={`/c/${item.id}`}
                   className={cn(
-                    "rounded px-1 py-0.5 hover:bg-accent hover:text-accent-foreground",
+                    "rounded-lg px-1.5 py-0.5 transition-colors hover:bg-accent hover:text-accent-foreground",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                   title={item.title}
@@ -62,7 +62,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
               )}
               {!isLast ? (
                 <span aria-hidden="true" className="text-muted-foreground/60">
-                  /
+                  ›
                 </span>
               ) : null}
             </li>

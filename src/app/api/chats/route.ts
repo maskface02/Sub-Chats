@@ -64,6 +64,9 @@ async function listChats(
         isNull(conversations.parentId),
         // Soft-deleted conversations never appear in the list (US-401 AC.5).
         isNull(conversations.deletedAt),
+        // Empty root drafts are not history. Keep roots with activity or branches.
+        sql`(EXISTS (SELECT 1 FROM messages activity WHERE activity.conversation_id = ${conversations.id})
+          OR EXISTS (SELECT 1 FROM conversations child WHERE child.parent_id = ${conversations.id} AND child.deleted_at IS NULL))`,
         cursorDate ? lt(conversations.updatedAt, cursorDate) : undefined,
       ),
     )

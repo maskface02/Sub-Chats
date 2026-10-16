@@ -6,8 +6,12 @@ import type { Message } from "@/lib/api-client/types";
 import { Markdown } from "@/components/markdown/Markdown";
 import { EditMessage, type EditSaveResult } from "./EditMessage";
 import { RegenerateButton } from "./RegenerateButton";
+import { Bot, UserRound } from "lucide-react";
+import type { BranchRange } from "./branchHighlights";
 
 export interface MessageBubbleProps {
+  branches?: BranchRange[];
+  conversationId?: string;
   message: Message;
   isStreaming?: boolean;
   /**
@@ -28,6 +32,8 @@ export interface MessageBubbleProps {
 }
 
 export function MessageBubble({
+  branches,
+  conversationId,
   message,
   isStreaming = false,
   disableBranch = false,
@@ -52,18 +58,28 @@ export function MessageBubble({
       aria-label={ariaLabel}
       data-message-id={message.id}
       data-message-role={message.role}
+      data-message-source={message.content}
       data-no-branch={disableBranch ? "true" : undefined}
       className={cn(
-        "group flex w-full",
+        "group flex w-full animate-enter gap-3",
         isUser ? "justify-end" : "justify-start",
       )}
     >
+      {!isUser ? (
+        <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-secondary text-primary">
+          <Bot className="h-4 w-4" />
+        </div>
+      ) : null}
       <div
         className={cn(
-          "flex max-w-[85%] flex-col sm:max-w-[75%]",
+          "flex max-w-[88%] flex-col sm:max-w-[78%]",
           isUser ? "items-end" : "items-start",
         )}
       >
+        <div className={cn("mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground", isUser && "flex-row-reverse")}>
+          {isUser ? <UserRound className="h-3 w-3" /> : null}
+          <span>{isUser ? "You" : "Assistant"}</span>
+        </div>
         {editing && isUser && onEditSave ? (
           <div className="w-full min-w-[16rem]">
             <EditMessage
@@ -80,19 +96,18 @@ export function MessageBubble({
           <>
             <div
               className={cn(
-                "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
-                "select-text",
+                "select-text text-[14px] leading-6",
                 // Plain-text accumulation keeps pre-wrap; markdown blocks collapse it
                 // themselves so a rendered message must NOT preserve tags' whitespace.
                 isAssistant && !isStreaming ? "" : "whitespace-pre-wrap",
                 isUser
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-foreground",
+                  ? "rounded-2xl bg-secondary px-4 py-3 text-foreground"
+                  : "py-1 text-foreground",
               )}
-              title={new Date(message.createdAt).toLocaleString()}
+              title={new Date(message.createdAt).toUTCString()}
             >
               {isAssistant && !isStreaming ? (
-                <Markdown content={message.content} />
+                <Markdown content={message.content} branches={disableBranch ? undefined : branches} parentId={conversationId} />
               ) : (
                 <span className={cn(isAssistant && isStreaming && "streaming-caret")}>
                   {message.content || (isAssistant && isStreaming ? "" : "")}
@@ -108,12 +123,12 @@ export function MessageBubble({
               ) : null}
             </div>
             {isUser && canEdit && !busy && onEditSave ? (
-              <div className="mt-1 flex justify-end opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+              <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
                   aria-label="Edit message"
-                  className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="rounded-lg px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   Edit
                 </button>

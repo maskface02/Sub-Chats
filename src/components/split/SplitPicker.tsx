@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { TreeQueryScope, useConversationTree } from "@/components/tree/useConversationTree";
 import { cn } from "@/lib/utils";
 import type { Conversation, TreeResponse } from "@/lib/api-client/types";
@@ -32,29 +33,27 @@ export function SplitPicker(props: SplitPickerDialogProps) {
 }
 
 function PickerInner({ open, onOpenChange, conversation, onPick }: SplitPickerDialogProps) {
-  const rootId = conversation.rootConversationId || conversation.id;
-  const { data, isLoading } = useConversationTree(rootId);
+  const { data, isLoading, isError, refetch } = useConversationTree(conversation.id);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const items = useMemo(
-    () => (data ? flatten(data.root).filter((n) => n.id !== data.currentId) : []),
-    [data],
+    () => (data ? flatten(data.root).filter((n) => n.parentId === conversation.id) : []),
+    [data, conversation.id],
   );
-  void conversation;
 
-  // Parent preselect: default highlight when opening.
+  // Focus the first direct subchat, never an ancestor or sibling.
   useEffect(() => {
     if (!open || !data) return;
-    const target = conversation.parentId ?? rootId;
+    const target = items[0]?.id;
     requestAnimationFrame(() => {
       listRef.current
         ?.querySelector<HTMLButtonElement>(`[data-picker-id="${target}"]`)
         ?.focus();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, data]);
+  }, [open, data, items]);
 
   // Focus trap + Esc cancel.
   useEffect(() => {
@@ -89,7 +88,7 @@ function PickerInner({ open, onOpenChange, conversation, onPick }: SplitPickerDi
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-background/60 backdrop-blur-sm"
@@ -101,16 +100,21 @@ function PickerInner({ open, onOpenChange, conversation, onPick }: SplitPickerDi
         role="dialog"
         aria-label="Choose conversation for second pane"
         aria-busy={isLoading ? "true" : "false"}
-        className="relative z-10 w-full max-w-md rounded-lg border bg-background p-4 shadow-xl motion-safe:animate-in motion-safe:fade-in"
+        className="relative z-10 w-full max-w-md animate-modal-in rounded-2xl border bg-background p-5 shadow-2xl"
       >
         <h2 className="mb-2 text-sm font-semibold">Choose conversation for second pane</h2>
         {isLoading ? (
           <div className="flex justify-center py-8" aria-busy="true">
             <span className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
           </div>
+        ) : isError ? (
+          <div role="alert" className="py-6 text-center text-sm">
+            <p>Could not load conversations.</p>
+            <button type="button" onClick={() => void refetch()} className="mt-2 underline">Retry</button>
+          </div>
         ) : items.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No other conversations in this tree
+            This chat has no subchats yet.
           </p>
         ) : (
           <div ref={listRef} className="max-h-80 overflow-y-auto">
@@ -128,12 +132,8 @@ function PickerInner({ open, onOpenChange, conversation, onPick }: SplitPickerDi
                     className={cn(
                       "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent focus:bg-accent focus:outline-none",
                     )}
-                    style={{ paddingLeft: 8 + item.depth * 14 }}
                   >
                     <span className="truncate">{item.title}</span>
-                    {item.id === conversation.parentId ? (
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">parent</span>
-                    ) : null}
                   </button>
                 </li>
               ))}
@@ -151,7 +151,8 @@ function PickerInner({ open, onOpenChange, conversation, onPick }: SplitPickerDi
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

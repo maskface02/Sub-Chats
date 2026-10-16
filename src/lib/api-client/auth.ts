@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 import { signIn, signOut } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/auth/rate-limit";
 import { apiFetch, ApiError } from "./base";
-import type { AuthActionResult, CreateChatResponse } from "./types";
+import type { AuthActionResult } from "./types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN = 8;
@@ -50,7 +50,7 @@ export async function signUpAction(
     await apiFetch(`/api/auth/signup`, {
       method: "POST",
       baseUrl: process.env.AUTH_URL,
-      body: { email, password, name },
+      body: name ? { email, password, name } : { email, password },
     });
   } catch (err) {
     if (err instanceof ApiError) {
@@ -141,14 +141,4 @@ export async function signOutAction(): Promise<void> {
   await signOut({ redirect: false });
   revalidatePath("/");
   redirect("/signin");
-}
-
-export async function createChatAction(): Promise<never> {
-  const chat = await apiFetch<CreateChatResponse>(`/api/chats`, {
-    method: "POST",
-    body: {},
-    baseUrl: process.env.AUTH_URL,
-  });
-  revalidatePath("/");
-  redirect(`/c/${chat.id}`);
 }

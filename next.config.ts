@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  distDir: process.env.PLAYWRIGHT_DIST_DIR ?? ".next",
   reactStrictMode: true,
   experimental: {
     serverActions: { bodySizeLimit: "2mb" },

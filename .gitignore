@@ -5,6 +5,7 @@ node_modules/
 
 # next
 .next/
+.next-e2e/
 out/
 build/
 
@@ -25,6 +26,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # db
+.data/
 *.sqlite
 *.sqlite-journal
 *.db

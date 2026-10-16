@@ -586,6 +586,7 @@ export async function streamChatResponse(
 
   try {
     const result = streamText({
+      ...provider.generationSettings,
       model: provider.model,
       messages: modelMessages,
       abortSignal: controller.signal,
@@ -610,6 +611,8 @@ export async function streamChatResponse(
     });
 
     const response = result.toDataStreamResponse();
+    response.headers.set("X-Assistant-Message-Id", assistantMsgId);
+    if (!skipUserPersist) response.headers.set("X-User-Message-Id", userMsgId);
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("X-Accel-Buffering", "no");

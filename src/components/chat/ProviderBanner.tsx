@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ProviderInfo } from "@/lib/api-client/types";
 import { cn } from "@/lib/utils";
+import { ArrowRight, Sparkles } from "lucide-react";
 
 export interface ProviderBannerProps {
   provider: ProviderInfo | null | undefined;
@@ -12,24 +13,30 @@ export function ProviderBanner({ provider }: ProviderBannerProps) {
     <div
       role="status"
       className={cn(
-        "border-b border-amber-300/40 bg-amber-100/60 px-4 py-2 text-sm text-amber-900",
+        "border-b border-border/60 bg-muted/40 px-4 py-2 text-muted-foreground",
         "dark:border-amber-700/40 dark:bg-amber-950/60 dark:text-amber-100",
       )}
     >
-      <span className="font-medium">No AI provider configured.</span>{" "}
-      Set <code className="rounded bg-amber-200/60 px-1 py-0.5 text-xs">OPENAI_API_KEY</code>{" "}
-      or run Ollama locally at{" "}
-      <code className="rounded bg-amber-200/60 px-1 py-0.5 text-xs">OLLAMA_BASE_URL</code>.{" "}
-      See{" "}
-      <Link
-        href="https://github.com/anomalyco/opencode"
-        className="underline underline-offset-2"
-        target="_blank"
-        rel="noreferrer"
-      >
-        setup notes
-      </Link>
-      .
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 text-xs">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="grid h-5 w-5 shrink-0 place-items-center text-muted-foreground">
+            <Sparkles className="h-3 w-3" />
+          </span>
+          <span className="truncate">
+            <span className="font-semibold">No AI provider configured.</span>
+            <span className="hidden text-muted-foreground sm:inline">
+              {" "}Connect one to start sending messages.
+            </span>
+          </span>
+        </span>
+        <Link
+          href="/settings/providers"
+          aria-label="Connect provider"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 font-semibold text-primary transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Connect provider <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
     </div>
   );
 }
