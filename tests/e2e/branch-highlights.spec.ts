@@ -1,0 +1,41 @@
+import { test, expect } from "@playwright/test";
+
+test("linked text previews and opens its subchat in either destination", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (message.type() === "error" && !message.text().includes("503")) errors.push(message.text()); });
+  await page.goto("/signup");
+  await page.getByLabel(/^email/i).fill(`highlight-${Date.now()}@example.com`);
+  await page.getByLabel(/^password$/i).fill("test-password-123");
+  await page.getByLabel(/confirm password/i).fill("test-password-123");
+  await page.getByRole("button", { name: /create account/i }).click();
+  await page.waitForURL("/");
+  const root = await (await page.request.post("/api/chats", { data: {} })).json();
+  const child = await (await page.request.post("/api/chats", { data: {} })).json();
+  const messageId = crypto.randomUUID();
+  const text = "Explore this sentence with **more detail** today.";
+  const linked = { ...child, title: "A closer look", depth: 1, highlightText: "this sentence with **more detail**", sourceMessageId: messageId, sourceStart: 8, sourceEnd: 42, children: [] };
+  // Mock only the content fixture and AI stream; navigation uses real local chats.
+  await page.route("**/api/chats/*/tree", route => route.fulfill({ json: { root: { ...root, children: [linked] }, currentId: root.id, totalNodes: 2, truncated: false } }));
+  await page.route(`**/api/chats/${child.id}`, route => route.fulfill({ json: { ...child, title: "A closer look", rootConversationId: root.id, parentId: root.id, messages: [{ id: "reply", role: "assistant", content: "A short explanation from the linked subchat.", createdAt: child.createdAt }] } }));
+  await page.route("**/api/chats/*/messages", route => route.fulfill({ headers: { "content-type": "text/plain", "x-vercel-ai-data-stream": "v1", "X-Assistant-Message-Id": messageId }, body: `0:${JSON.stringify(text)}\ne:{"finishReason":"stop"}\nd:{"finishReason":"stop"}\n` }));
+  await page.goto(`/c/${root.id}`);
+  await page.getByLabel("Message input", { exact: true }).fill("Explain");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const highlight = page.locator('[data-branch-highlight="true"]').first();
+  await expect(highlight).toBeVisible();
+  await highlight.hover();
+  await expect(page.getByRole("dialog", { name: "Subchat preview" })).toBeVisible();
+  expect(await page.getByRole("dialog", { name: "Subchat preview" }).evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
+  await expect(page.getByText("A short explanation from the linked subchat.", { exact: true })).toBeVisible();
+  await expect.poll(() => page.getByRole("dialog", { name: "Subchat preview" }).evaluate(el => getComputedStyle(el).opacity)).toBe("1");
+  await page.screenshot({ path: "/tmp/subchat-highlight-preview.png" });
+  await page.getByRole("button", { name: "Open on the right", exact: true }).click();
+  await expect(page.getByRole("region", { name: /^Chat pane/ })).toHaveCount(2);
+  await highlight.focus();
+  await highlight.press("Enter");
+  await page.getByRole("button", { name: "Open here", exact: true }).click();
+  await page.waitForURL(`/c/${child.id}`);
+  await expect(page.getByRole("region", { name: /^Chat pane/ })).toHaveCount(1);
+  expect(errors).toEqual([]);
+});

@@ -26,7 +26,7 @@ test.describe("provider settings — full lifecycle", () => {
 
     // add an openai provider with a fake key
     await page.getByRole("button", { name: /add provider/i }).click();
-    await page.getByLabel(/^type$/i).selectOption("openai");
+    await page.getByRole("radio", { name: "OpenAI", exact: true }).check();
     await page.getByLabel(/^api key$/i).fill("sk-test-fake-key-123abc1");
     await page.getByRole("button", { name: /^add provider$/i }).click();
 
@@ -58,7 +58,7 @@ test.describe("provider settings — full lifecycle", () => {
         /^delete provider openai\? chats will fall back to the server default\.$/i,
       ),
     ).toBeVisible();
-    await page.getByRole("button", { name: /delete/i, exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
 
     // gone, no stale default, empty state back
     await expect(page.getByTestId("provider-row")).toHaveCount(0);

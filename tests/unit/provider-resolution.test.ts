@@ -68,6 +68,7 @@ vi.mock("@/lib/ai/ssrf-guard", () => ({
 }));
 
 const ENV_KEYS = [
+  "NVIDIA_API_KEY",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "OLLAMA_BASE_URL",
@@ -130,6 +131,25 @@ beforeEach(() => {
 });
 
 describe("provider resolution — user default precedence (US-304)", () => {
+  it("resolves NVIDIA through encrypted custom providers with the requested generation settings", async () => {
+    m.selectRows = [makeRow({
+      type: "custom",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+      defaultModel: "meta/muse-glimmer-30b",
+    })];
+    m.decrypt.mockReturnValue("nvapi-test-placeholder");
+    const mod = await freshImport();
+    const provider = await mod.getActiveProviderFor("user-1");
+    expect(provider?.modelId).toBe("meta/muse-glimmer-30b");
+    expect(provider?.generationSettings).toEqual({ temperature: 1, topP: 0.95, maxTokens: 8192 });
+    expect(m.assertSendTimeAllowed).toHaveBeenCalledWith("https://integrate.api.nvidia.com/v1", "custom");
+    expect(m.createOpenAI).toHaveBeenCalledWith(expect.objectContaining({
+      baseURL: "https://integrate.api.nvidia.com/v1",
+      apiKey: "nvapi-test-placeholder",
+      fetch: expect.any(Function),
+    }));
+  });
+
   it("user default row wins over a fully-populated env chain", async () => {
     setEnv({ OPENAI_API_KEY: "sk-env", ANTHROPIC_API_KEY: "sk-ant-env" });
     m.selectRows = [makeRow({ type: "anthropic" })];
@@ -165,6 +185,32 @@ describe("provider resolution — user default precedence (US-304)", () => {
 });
 
 describe("provider resolution — env chain order (US-305 AC.2/AC.5)", () => {
+  it("uses the NVIDIA env key with the configured model and generation settings", async () => {
+    setEnv({ NVIDIA_API_KEY: "nvapi-test-placeholder" });
+    const mod = await freshImport();
+    const p = await mod.getActiveProviderFor("user-1");
+    expect(p).toMatchObject({
+      type: "custom",
+      id: "env:nvidia",
+      source: "env",
+      modelId: "meta/muse-glimmer-30b",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+      generationSettings: { temperature: 1, topP: 0.95, maxTokens: 8192 },
+    });
+    expect(m.createOpenAI).toHaveBeenCalledWith({
+      name: "nvidia",
+      baseURL: "https://integrate.api.nvidia.com/v1",
+      apiKey: "nvapi-test-placeholder",
+    });
+  });
+
+  it("uses NVIDIA before other environment providers", async () => {
+    setEnv({ NVIDIA_API_KEY: "nvapi-test-placeholder", OPENAI_API_KEY: "sk-env" });
+    const mod = await freshImport();
+    const p = await mod.getActiveProviderFor("user-1");
+    expect(p?.id).toBe("env:nvidia");
+  });
+
   it("openai beats anthropic when both env keys are set", async () => {
     setEnv({ OPENAI_API_KEY: "sk-env", ANTHROPIC_API_KEY: "sk-ant-env" });
     const mod = await freshImport();
